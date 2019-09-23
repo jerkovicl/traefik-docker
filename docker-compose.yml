@@ -1,0 +1,1091 @@
+
+#Reference: https://www.smarthomebeginner.com/traefik-reverse-proxy-tutorial-for-docker
+#Refernce for traefik auth: https://geek-cookbook.funkypenguin.co.nz/ha-docker-swarm/traefik-forward-auth/
+# https://github.com/thomseddon/traefik-forward-auth#user-restriction
+# https://hub.docker.com/r/jboss/keycloak/
+# https://geek-cookbook.funkypenguin.co.nz/recipes/keycloak/
+# Reference for keycloak setup : https://geek-cookbook.funkypenguin.co.nz/recipes/keycloak/setup-oidc-provider/
+# To fix net.core.*mem issues add these to the bottom of /etc/sysctl.conf
+# https://forums.docker.com/t/how-to-tune-kernel-properties-in-docker-images/25291
+    # ## Allow a 25MB UDP receive buffer for JGroups
+    # net.core.rmem_max = 26214400
+    # ## Allow a 1MB UDP send buffer for JGroups
+    # net.core.wmem_max = 1048576
+
+    # or
+
+    # sudo sysctl -w net.core.rmem_max=26214400
+    # sudo sysctl -w net.core.wmem_max=1048576
+    ## https://www.cyberciti.biz/faq/reload-sysctl-conf-on-linux-using-sysctl/
+
+# Suggested procedure to create your KeyCloak Database:
+# Change the <password>
+    # docker exec -it mariadb mysql -uroot -p$MYSQL_ROOT_PASSWORD
+    # CREATE DATABASE keycloak CHARACTER SET = utf8 COLLATE = utf8_unicode_ci;
+    # GRANT ALL PRIVILEGES ON keycloak.* TO 'keycloak'@'keycloak.traefik_proxy' IDENTIFIED BY '<password>';
+    # FLUSH PRIVILEGES;
+    # exit
+
+# Initialize admin account:
+    # docker exec keycloak keycloak/bin/add-user-keycloak.sh -u <username> -p <password>
+# https://github.com/keycloak/keycloak-containers/blob/master/server/README.md
+# https://<your-keycloak-url>/realms/master/.well-known/openid-configuration
+#Requirement: nano .env -> Set environmental variables: ${$USERDIR}, ${PUID}, ${PGID}, ${TZ}, ${DOMAINNAME}, ${CLOUDFLARE_EMAIL},  ${CLOUDFLARE_API_KEY}, ${HTTP_USERNAME}, ${HTTP_PASSWORD}, ${PLEX_CLAIM} etc. as explained in the reference.
+
+version: "3.7"
+services:
+
+######### FRONTENDS ##########
+
+# Traefik Reverse Proxy
+  traefik:
+    hostname: traefik
+    image: traefik:v1.7.16
+    container_name: traefik
+    restart: always
+    domainname: ${DOMAINNAME}
+    networks:
+      - default
+      - traefik_proxy
+    ports:
+      - "80:80"
+      - "443:443"
+#     - "XXXX:8080"
+    environment:
+      - CF_API_EMAIL=${CLOUDFLARE_EMAIL}
+      - CF_API_KEY=${CLOUDFLARE_API_KEY}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=traefik"
+      - "traefik.frontend.rule=Host:traefik.${DOMAINNAME}"  
+#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /traefik"
+      - "traefik.port=8080"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
+      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
+      - "traefik.frontend.auth.forward.trustForwardHeader=true"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      #- "traefik.frontend.auth.basic.users=${HTTP_USERNAME}:${HTTP_PASSWORD}"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${USERDIR}/docker/traefik:/etc/traefik
+      - ${USERDIR}/docker/shared:/shared
+ 
+# The auth gate for SSO
+  traefik-forward-auth:
+# thomseddeon's image doesnt support OIDC_ISSUER yet
+#    image: thomseddon/traefik-forward-auth
+    image: funkypenguin/traefik-forward-auth
+    container_name: traefik-forward-auth
+    networks:
+      - traefik_proxy
+    environment:
+      CLIENT_ID: ${AUTH_CLIENT_ID}
+      CLIENT_SECRET: ${AUTH_CLIENT_SECRET}
+      # This is based on using the Master realm. Create a new client, this will go into your CLIENT_ID, CLIENT_SECRET details.
+      OIDC_ISSUER: https://keycloak.${DOMAINNAME}/auth/realms/master
+      SECRET: ${HTTP_PASSWORD}
+      AUTH_HOST: auth.${DOMAINNAME}
+      COOKIE_DOMAINS: ${DOMAINNAME}
+      #WHITELIST: ${EMAIL}
+      COOKIE_SECURE: "true"
+      LIFETIME: "2592000" 
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.port=4181"
+      - "traefik.frontend.rule=Host:auth.${DOMAINNAME}"
+      - "traefik.backend=traefik-forward-auth"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
+      - "traefik.frontend.auth.forward.trustForwardHeader=true"
+      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
+    depends_on:
+      - keycloak
+      - traefik
+# Keycloak - identity and access management solution
+# TODO: add db backup script
+  keycloak:
+    image: jboss/keycloak
+    container_name: keycloak
+    domainname: ${DOMAINNAME}
+    restart: always
+#    ports:
+#      - "8080:8080"
+    networks:
+      - traefik_proxy
+      - keycloak
+    volumes:
+#      - ${USERDIR}/docker/keycloak/config.json:/config.json
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - KEYCLOAK_USER=${KEYCLOAK_USER}
+      - KEYCLOAK_PASSWORD=${KEYCLOAK_PASSWORD}
+#      - KEYCLOAK_IMPORT=/config.json
+      - DB_VENDOR=mariadb
+      - DB_DATABASE=keycloak
+      - DB_ADDR=mariadb
+      - DB_USER=keycloak
+      - DB_PASSWORD=${MYSQL_ROOT_PASSWORD}
+# This is required to run keycloak behind traefik
+      - PROXY_ADDRESS_FORWARDING=true
+      - KEYCLOAK_HOSTNAME=keycloak.${DOMAINNAME}
+# Tell MYSQL what user/password to create
+      - MYSQL_USER=keycloak
+      - MYSQL_PASSWORD=${MYSQL_ROOT_PASSWORD}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.backend=keycloak"
+      - "traefik.frontend.rule=Host:keycloak.${DOMAINNAME}"
+#      - "traefik.protocol: http"
+      - "traefik.port=8080"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=keycloak.${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+    depends_on:
+      - mariadb
+ 
+ #Portainer - WebUI for Containers
+  portainer:
+    image: portainer/portainer
+    container_name: portainer
+    restart: always
+    command: -H unix:///var/run/docker.sock
+#    ports:
+#      - "XXXX:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${USERDIR}/docker/portainer/data:/data
+      - ${USERDIR}/docker/shared:/shared
+    environment:
+      - TZ=${TZ}
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=portainer"
+      - "traefik.frontend.rule=Host:portainer.${DOMAINNAME}"  
+#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /portainer"
+      - "traefik.port=9000"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+
+# Organizer - Unified HTPC/Home Server Web Interface
+  organizr:
+    container_name: organizr
+    restart: always
+    image: lsiocommunity/organizr
+    volumes:
+      - ${USERDIR}/docker/organizr:/config
+      - ${USERDIR}/docker/shared:/shared
+#    ports:
+#      - "XXXX:80"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=organizr"
+      - "traefik.frontend.rule=Host:organizr.${DOMAINNAME}"  
+#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /organizr"
+      - "traefik.port=80"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+
+# phpMyAdmin - WebUI for MariaDB
+  phpmyadmin:
+    hostname: phpmyadmin
+    container_name: phpmyadmin
+    image: phpmyadmin/phpmyadmin
+    restart: always
+    depends_on:
+      - mariadb
+#    ports:
+#      - XXXX:80
+    environment:
+      - PMA_HOST=mariadb
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+    networks:
+      - traefik_proxy
+      - default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=pma"
+      - "traefik.frontend.rule=Host:pma.${DOMAINNAME}"
+      - "traefik.port=80"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+
+######### DOCKER RELATED ##########
+
+# Watchtower - Automatic Update of Containers/Apps
+  watchtower:
+    container_name: watchtower
+    hostname: watchtower
+    restart: always
+    image: containrrr/watchtower #v2tec/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_NOTIFICATIONS=slack
+      - WATCHTOWER_NOTIFICATION_SLACK_HOOK_URL=${SLACK_WEBHOOK_URL}
+      - WATCHTOWER_NOTIFICATION_SLACK_IDENTIFIER=watchtower
+      - WATCHTOWER_NOTIFICATION_SLACK_CHANNEL=#docker
+    command: --schedule "0 0 4 * * *" --cleanup --debug
+    
+# Docker Garbage Collector
+  dockergc: 
+    container_name: docker-gc
+    image: clockworksoul/docker-gc-cron:latest
+    #network_mode: "host"
+    restart: always
+    volumes: 
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${USERDIR}/docker/shared/docker-gc-exclude:/etc/docker-gc-exclude
+    environment: 
+      - CRON=0 9,21 * * *
+      - FORCE_IMAGE_REMOVAL=1
+      - FORCE_CONTAINER_REMOVAL=1
+      - MINIMUM_IMAGES_TO_SAVE=1
+      - GRACE_PERIOD_SECONDS=3600
+      - DRY_RUN=0
+      - CLEAN_UP_VOLUMES=1
+      - TZ=${TZ}
+
+######### DOWNLOADERS ##########
+
+# qBittorrent without VPN – Bittorrent Downloader
+  qbittorrent:
+    image: "linuxserver/qbittorrent"
+    container_name: "qbittorrent"
+    volumes:
+      - ${USERDIR}/docker/qbittorrent:/config
+      - ${USERDIR}/Downloads/completed:/downloads
+      - ${USERDIR}/docker/shared:/shared
+    ports:
+      - "8080:8080"
+      - "6881:6881"
+      - "6881:6881/udp"
+    restart: always
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK_SET=002
+      - WEBUI_PORT=8080
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=qbittorrent"
+#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /qbittorrent"
+      - "traefik.frontend.rule=Host:qbit.${DOMAINNAME}"
+      - "traefik.port=8080"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+
+# SABnzbd – Usenet (NZB) Downloader
+  sabnzbd:
+    image: "linuxserver/sabnzbd"
+    container_name: "sabnzbd"
+    volumes:
+      - ${USERDIR}/docker/sabnzbd:/config
+      - ${USERDIR}/Downloads/completed:/downloads
+      - ${USERDIR}/Downloads/incomplete:/incomplete-downloads
+      - ${USERDIR}/docker/shared:/shared
+#    ports:
+#        - "XXXX:8080"
+    restart: always
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=sabnzbd"
+      - "traefik.frontend.rule=Host:sabnzbd.${DOMAINNAME}"
+#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /sabnzbd"
+      - "traefik.port=8080"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+
+######### PERSONAL VIDEO RECORDERS ##########
+
+# Radarr – Movie Download and Management
+  radarr:
+    image: "linuxserver/radarr"
+    container_name: "radarr"
+    volumes:
+      - ${USERDIR}/docker/radarr:/config
+      - ${USERDIR}/Downloads/completed:/downloads
+      - ${USERDIR}/media/movies:/movies
+      - /etc/localtime:/etc/localtime:ro
+      - ${USERDIR}/docker/shared:/shared
+#    ports:
+#      - "XXXX:7878"
+    restart: always
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=radarr"
+#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /radarr"
+      - "traefik.frontend.rule=Host:radarr.${DOMAINNAME}"
+      - "traefik.port=7878"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true" # set to false to show as tabs in organizr
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+
+# Sonarr – TV Show Download and Management
+  sonarr:
+    image: "linuxserver/sonarr"
+    container_name: "sonarr"
+    volumes:
+      - ${USERDIR}/docker/sonarr:/config
+      - ${USERDIR}/Downloads/completed:/downloads
+      - ${USERDIR}/media/tvshows:/tv
+      - /etc/localtime:/etc/localtime:ro
+      - ${USERDIR}/docker/shared:/shared
+#    ports:
+#        - "XXXX:8989"
+    restart: always
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=sonarr"
+#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /sonarr"
+      - "traefik.frontend.rule=Host:sonarr.${DOMAINNAME}"
+      - "traefik.port=8989"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+
+#LIDARR - Music Download and Management
+  lidarr:
+    image: "linuxserver/lidarr"
+    hostname: lidarr
+    container_name: "lidarr"
+    volumes:
+      - ${USERDIR}/docker/lidarr:/config
+      - ${USERDIR}/Downloads:/downloads
+      - ${USERDIR}/media/music:/music
+      - /etc/localtime:/etc/localtime:ro
+      - ${USERDIR}/docker/shared:/shared
+#    ports:
+#      - "XXXX:8686"
+    restart: always
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=lidarr"
+#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /lidarr"
+      - "traefik.frontend.rule=Host:lidarr.${DOMAINNAME}"
+      - "traefik.port=8686"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
+      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
+      - "traefik.frontend.auth.forward.trustForwardHeader=true"
+
+# Bazarr - Subtitles download and managment
+  bazarr:
+    image: linuxserver/bazarr
+    container_name: bazarr
+    restart: always
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK_SET=022 #optional
+    volumes:
+      - ${USERDIR}/docker/bazarr:/config
+      - ${USERDIR}/media/movies:/movies
+      - /etc/localtime:/etc/localtime:ro
+      - ${USERDIR}/media/tvshows:/tv
+    # ports:
+    # - 6767:6767
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=bazarr"
+#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /bazarr"
+      - "traefik.frontend.rule=Host:bazarr.${DOMAINNAME}"
+      - "traefik.port=6767"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+
+######### MEDIA SERVER APPS ##########
+
+# Plex Media Server
+  plexms:
+    container_name: plexms
+    restart: always
+    image: plexinc/pms-docker
+    volumes:
+      - ${USERDIR}/docker/plexms:/config
+      - ${USERDIR}/Downloads/plex_tmp:/transcode
+      - ${USERDIR}/media:/media
+      - ${USERDIR}/docker/shared:/shared
+    ports:
+      - "32400:32400/tcp"
+      - "3005:3005/tcp"
+      - "8324:8324/tcp"
+      - "32469:32469/tcp"
+      - "1900:1900/udp"
+      - "32410:32410/udp"
+      - "32412:32412/udp"
+      - "32413:32413/udp"
+      - "32414:32414/udp"
+    environment:
+      - TZ=${TZ}
+      - HOSTNAME="Docker Plex"
+      - PLEX_CLAIM=${PLEX_CLAIM}
+      - PLEX_UID=${PUID}
+      - PLEX_GID=${PGID}
+      - ADVERTISE_IP="http://SERVER-IP:32400/" # IP Address of your server, run ifconfig
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=plexms"
+      - "traefik.frontend.rule=Host:plex.${DOMAINNAME}"
+      - "traefik.port=32400"
+      - "traefik.protocol=http"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+
+# Funkwhale - music streaming server
+# after first run, docker exec -it funkwhale manage createsuperuser
+# For file structures similar to ./Artist/Album/Track.mp3, import with command:
+# docker exec -it funkwhale manage import_files $LIBRARY_ID "/music/**/**/*.mp3" --in-place --async
+# create library on /content/libraries
+  funkwhale:
+    image: thetarkus/funkwhale
+    container_name: funkwhale
+    restart: unless-stopped
+    networks:
+      - traefik_proxy
+    environment:
+      - TZ=${TZ}
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - FUNKWHALE_HOSTNAME=funkwhale.${DOMAINNAME}
+      - LIBRARY_ID=${LIBRARY_ID}
+    volumes: 
+      - ${USERDIR}/docker/funkwhale:/data
+      - ${USERDIR}/media/music:/music
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=funkwhale"
+      - "traefik.frontend.rule=Host:funkwhale.${DOMAINNAME}"
+      - "traefik.port=80"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=funkwhale.${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
+      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
+      - "traefik.frontend.auth.forward.trustForwardHeader=true"
+      
+# MusicBrainz Picard – Music Management
+  picard:
+    container_name: picard
+    image: mikenye/picard
+    restart: always
+    networks:
+      - traefik_proxy
+#    ports:
+#      - "5800:5800"
+    volumes:
+      - $USERDIR/media/music:/storage:rw
+      - $USERDIR/docker/picard:/config:rw
+    environment:
+      - USER_ID=${PUID}
+      - GROUP_ID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+      - DISPLAY_WIDTH=1280
+      - DISPLAY_HEIGHT=768
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=picard"
+      - "traefik.frontend.rule=Host:picard.${DOMAINNAME}"
+      - "traefik.port=5800"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=picard.${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
+      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
+      - "traefik.frontend.auth.forward.trustForwardHeader=true"
+ 
+# Ubooquity - home server for comics and ebooks library
+  ubooquity:
+    image: linuxserver/ubooquity
+    container_name: ubooquity
+    restart: always
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - MAXMEM=1024
+    volumes:
+      - ${USERDIR}/docker/ubooquity:/config
+      - ${USERDIR}/media/books:/books
+      - ${USERDIR}/media/comics:/comics
+      - ${USERDIR}/media/files:/files
+    ports:
+      - 2202:2202
+      - 2203:2203
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=ubooquity"
+      #- "traefik.frontend.rule=Host:ubooquity.${DOMAINNAME}"
+      #- "traefik.port=2202"
+      - "traefik.web.frontend.rule=Host:ubooquity.${DOMAINNAME}"
+      - "traefik.web.port=2202"
+      - "traefik.admin.frontend.rule=Host:ubooquity.${DOMAINNAME}; PathPrefix:/admin,/admin-res,/admin-api"
+      - "traefik.admin.port=2203"
+      - "traefik.protocol=http"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+
+######### SEARCHERS ##########
+
+# Jackett – Torrent Proxy
+  jackett:
+    image: "linuxserver/jackett"
+    container_name: "jackett"
+    volumes:
+      - ${USERDIR}/docker/jackett:/config
+      - ${USERDIR}/Downloads/completed:/downloads
+      - /etc/localtime:/etc/localtime:ro
+      - ${USERDIR}/docker/shared:/shared
+#    ports:
+#      - "XXXX:9117"
+    restart: always
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=jackett"
+      - "traefik.frontend.rule=Host:jackett.${DOMAINNAME}"
+#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /jackett"
+      - "traefik.port=9117"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+
+######### UTILITIES ##########
+
+# MariaDB – Database Server for your Apps
+  mariadb:
+    image: "linuxserver/mariadb"
+    container_name: "mariadb"
+    hostname: mariadb
+    volumes:
+        - ${USERDIR}/docker/mariadb:/config
+        - ${USERDIR}/docker/guacamole/init:/docker-entrypoint-initdb.d:ro
+        - ${USERDIR}/docker/mysql:/var/lib/mysql/data:rw
+    ports:
+      - target: 3306
+        published: 3306
+        protocol: tcp
+        mode: host
+    networks:
+      - keycloak
+    restart: always
+    environment:
+      - MYSQL_DATABASE=keycloak
+      #- MYSQL_USER=keycloak
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+# mysql db backup     
+  db-backup:
+    container_name: db-backup
+    image: tiredofit/mariadb-backup
+    depends_on:
+     - mariadb
+    volumes:
+      - ${USERDIR}/docker/mariadb/backups:/backups
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - DB_SERVER=mariadb
+      #- DB_NAME=example
+      - DB_USER=root
+      - DB_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - DB_DUMP_FREQ=1440
+      - DB_DUMP_BEGIN=+30
+      - DB_DUMP_TARGET=/${USERDIR}/docker/mariadb/backups
+      - DB_CLEANUP_TIME=8640
+      - COMPRESSION=XZ
+      - SPLIT_DB=TRUE
+    networks:
+      - traefik_proxy
+    restart: always
+# NextCloud – Your Own Cloud Storage
+  nextcloud:
+    container_name: nextcloud
+    restart: always
+    image: linuxserver/nextcloud
+    volumes:
+      - ${USERDIR}/docker/nextcloud:/config
+      - ${USERDIR}/shared_data:/data
+      - ${USERDIR}/docker/shared:/shared
+#    ports:
+#      - "XXXX:443"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=nextcloud"
+      - "traefik.frontend.rule=Host:nextcloud.${DOMAINNAME}"
+      - "traefik.port=443"
+      - "traefik.protocol=https"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+
+# Bitwarden - Password Vault
+  bitwarden:
+    container_name: bitwarden
+    image: bitwardenrs/server
+    restart: always
+    networks:
+      - traefik_proxy
+#    ports:
+#      - "8888:80"
+    volumes:
+      - $USERDIR/docker/bitwarden:/data
+      - /var/log/docker:/var/log/docker
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - SIGNUPS_ALLOWED=false # Change to false after first login
+      - INVITATIONS_ALLOWED=false
+      - WEBSOCKET_ENABLED=false #true
+      - LOG_FILE=/var/log/docker/bitwarden.log
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_FROM=${SMTP_EMAIL}
+      - SMTP_PORT=587
+      - SMTP_SSL=true
+      - SMTP_USERNAME=${SMTP_EMAIL}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - DOMAIN=https://bitwarden.$DOMAINNAME
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=bitwarden"
+      #- "traefik.frontend.rule=Host:bitwarden.${DOMAINNAME}"
+      - "traefik.web.frontend.rule=Host:bitwarden.${DOMAINNAME}"
+      - "traefik.port=80"
+      - "traefik.web.port=80"
+      - "traefik.hub.frontend.rule=Host:bitwarden.${DOMAINNAME};Path:/notifications/hub"
+      - "traefik.hub.port=3012"
+      - "traefik.hub.protocol=ws"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=bitwarden.${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+
+# Guacamole – Clientless remote desktop gateway
+  guacd:
+    container_name: guacd
+    hostname: guacd
+    image: guacamole/guacd
+    networks:
+      - traefik_proxy
+    restart: always
+    volumes:
+      - ${USERDIR}/docker/guacamole/drive:/drive:rw
+      - ${USERDIR}/docker/guacamole/record:/record:rw
+      
+  guacamole:
+    container_name: guacamole
+    depends_on:
+      - guacd
+      - mariadb
+    environment:
+      - GUACD_HOSTNAME=guacd
+      #- GUACD_PORT=4822
+      - MYSQL_HOSTNAME=mariadb
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=guacamole
+      - MYSQL_USER=guac
+      - MYSQL_PASSWORD=${MYSQL_ROOT_PASSWORD}
+    image: guacamole/guacamole
+    volumes:
+      - ${USERDIR}/docker/guacamole:/etc/guacamole:rw
+    networks:
+      - traefik_proxy
+      - default
+    ports:
+      - 8082:8080/tcp
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=guacamole" #guacamole_docker
+      - "traefik.frontend.rule=Host:guac.${DOMAINNAME}"
+      #- "traefik.frontend.rule=Host:guac.${DOMAINNAME}; AddPrefix: /guacamole"
+      - "traefik.port=8080"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+      
+# Glances - web-based top cmd
+  glances:
+    container_name: glances
+    hostname: glances
+    restart: always
+    image: vimagick/glances
+    #network_mode: host
+    pid: host
+    networks:
+      - traefik_proxy
+    volumes:
+      - ${USERDIR}/docker/glances:/etc/glances
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - GLANCES_OPT=-w
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=glances"
+      - "traefik.frontend.rule=Host:glances.${DOMAINNAME}"
+      #- "traefik.frontend.rule=Host:glances.docker.localhost"
+      - "traefik.port=61208"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+      
+# Heimdall - application dashboard
+  heimdall:
+    image: linuxserver/heimdall
+    container_name: heimdall
+    restart: always
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ${USERDIR}/docker/heimdall:/config
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=heim"
+      - "traefik.frontend.rule=Host:${DOMAINNAME}, www.${DOMAINNAME}, heimdall.${DOMAINNAME}"
+      - "traefik.port=80"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https:${DOMAINNAME}"
+    networks:
+      - traefik_proxy
+      
+# fail2ban
+  fail2ban:
+    container_name: fail2ban
+    image: crazymax/fail2ban:latest
+    restart: always
+    #network_mode: "host"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - /var/log:/var/log
+      - $USERDIR/docker/fail2ban:/data
+      - $USERDIR/docker/fail2ban/fail2ban.d:/etc/fail2ban/fail2ban.d
+    environment:
+      - TZ=${TZ}
+      - F2B_LOG_TARGET=STDOUT
+      - F2B_LOG_LEVEL=INFO
+      - F2B_DB_PURGE_AGE=1d
+      - F2B_MAX_RETRY=3
+      - F2B_DEST_EMAIL=webmaster@example.com
+      - F2B_SENDER=fail2ban@example.com
+      - F2B_ACTION=%(action_mw)s # %(action_mw)s or %(action_mwl)s to send mail
+      - F2B_IPTABLES_CHAIN=DOCKER-USER
+      - SSMTP_HOST=smtp.gmail.com
+      - SSMTP_PORT=587
+      #- SSMTP_HOSTNAME=example.com
+      - SSMTP_USER=${SMTP_EMAIL}
+      - SSMTP_PASSWORD=${SMTP_PASSWORD} # Create an "app password" if you use 2FA
+      - SSMTP_TLS=TLS
+    
+
+networks:
+  traefik_proxy:
+    external:
+      name: traefik_proxy
+  keycloak:
+    external:
+      name: keycloak
+  default:
+    external:
+      name: bridge
