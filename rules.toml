@@ -1,0 +1,14 @@
+[backends]
+  [backends.backend-hassio]
+    [backends.backend-hassio.servers]
+      [backends.backend-hassio.servers.server-hassio-ext]
+        url = "http://LAN-IP:8123"
+        weight = 0
+
+[frontends]
+  [frontends.frontend-hassio]
+    backend = "backend-hassio"
+    passHostHeader = true
+    [frontends.frontend-hassio.routes]
+          [frontends.frontend-hassio.routes.route-hassio-ext]
+        rule = "Host:hassio.example.com"
