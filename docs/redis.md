@@ -27,10 +27,9 @@ sudo sysctl vm.overcommit_memory=1
 # #
 # # By default this script does nothing.
 #
-# echo never > /sys/kernel/mm/transparent_hugepage/enabled
-# sysctl vm.overcommit_memory=1
-#
-# exit 0
+echo never > /sys/kernel/mm/transparent_hugepage/enabled
+sysctl vm.overcommit_memory=1
+exit 0
 ```
 - Save and exit
 - Now make the file executable `sudo chmod +x /etc/rc.local`
