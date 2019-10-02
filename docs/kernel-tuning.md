@@ -27,4 +27,6 @@ sysctl -p
 ### Fix Vscode file limit 
 - add these to the bottom of `/etc/sysctl.conf`
 
-`fs.inotify.max_user_watches = 524288`
+```
+fs.inotify.max_user_watches = 524288
+```
