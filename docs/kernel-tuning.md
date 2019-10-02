@@ -30,3 +30,7 @@ sysctl -p
 ```
 fs.inotify.max_user_watches = 524288
 ```
+
+### Fix Redis issues
+
+- info [here](https://redis.io/topics/admin)
