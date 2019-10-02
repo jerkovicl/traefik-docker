@@ -25,7 +25,7 @@ sysctl -p
 - Reference info [here](https://www.cyberciti.biz/faq/reload-sysctl-conf-on-linux-using-sysctl/)
 
 ### Fix Vscode file limit 
-- add these to the bottom of `/etc/sysctl.conf`
+- add this to the bottom of `/etc/sysctl.conf`
 
 ```
 fs.inotify.max_user_watches = 524288
