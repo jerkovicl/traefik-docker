@@ -52,3 +52,7 @@ exit
 'port' => 6379,
 ),
 ```
+
+### Updating Nextcloud to new version:
+
+- you need to launch updater using webgui, because updating docker image won't update it. 
