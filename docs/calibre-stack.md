@@ -39,9 +39,9 @@
 ### Calibre-Web setup
 
 - Initial Setup:
-* On the initial setup screen, enter /books as your calibre library location
-* Unrar is included by default and needs to be set in the Calibre-Web admin page (Basic Configuration:External Binaries) with a path of `/usr/bin/unrar`
-* To enable ebook conversion enable docker mod and then in the Calibre-Web admin page (Basic Configuration:External Binaries) set the path to converter tool to `/usr/bin/ebook-convert`
+    * On the initial setup screen, enter /books as your calibre library location
+    * Unrar is included by default and needs to be set in the Calibre-Web admin page (Basic Configuration:External Binaries) with a path of `/usr/bin/unrar`
+    * To enable ebook conversion enable docker mod and then in the Calibre-Web admin page (Basic Configuration:External Binaries) set the path to converter tool to `/usr/bin/ebook-convert`
 
 - Calibre-Web Volume Mapping:
   ```
