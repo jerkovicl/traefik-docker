@@ -16,6 +16,8 @@ exit
 
 ### Fail2ban integration
 
+* Referenced from [here](https://github.com/crazy-max/docker-fail2ban/tree/master/examples/jails)
+
 > jail.d/guacamole.conf
 ```
 [DEFAULT]
@@ -129,3 +131,32 @@ cfuser = user@mail.com
 # Values: Your CloudFlare API key 
 cftoken = 
 ```
+
+> config/guacamole/logback.xml
+```
+<configuration>
+        <!-- Appender for debugging -->
+        <appender name="GUAC-DEBUG" class="ch.qos.logback.core.ConsoleAppender">
+                <encoder>
+                        <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+                </encoder>
+        </appender>
+        <!-- Appender for debugging in a file-->
+        <appender name="GUAC-DEBUG_FILE" class="ch.qos.logback.core.FileAppender">
+                <file>/usr/local/tomcat/logs/guacd.log</file>
+                <encoder>
+                        <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+                </encoder>
+        </appender>
+        <!-- Log at DEBUG level -->
+        <root level="debug">
+                <appender-ref ref="GUAC-DEBUG"/>
+                <appender-ref ref="GUAC-DEBUG_FILE"/>
+        </root>
+</configuration>
+```
+
+* Some general tips:
+    - Enter fail2ban interactive mode: `fail2ban-client -i`
+    - Check the status of the jail: `status guacamole-auth`
+    - Unban with: `set guacamole-auth unbanip x.x.x.x`
