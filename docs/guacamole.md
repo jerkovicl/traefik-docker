@@ -157,6 +157,6 @@ cftoken =
 ```
 
 * Some general tips:
-    - Enter fail2ban interactive mode: `fail2ban-client -i`
-    - Check the status of the jail: `status guacamole-auth`
-    - Unban with: `set guacamole-auth unbanip x.x.x.x`
+    - Enter fail2ban mode: `fail2ban-client`
+    - Check the status of the jail: `fail2ban-client status guacamole-auth`
+    - Unban with: `fail2ban-client set guacamole-auth unbanip x.x.x.x`
