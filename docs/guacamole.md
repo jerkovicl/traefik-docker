@@ -34,7 +34,7 @@ maxretry = 5
 > filter.d/guacamole-auth.conf
 ```
 [Definition]
-failregex = \bAuthentication attempt from [<HOST>(?:,.*)?] for user ".*" failed\.
+failregex = \bAuthentication attempt from \[<HOST>(?:,.*)?\] for user ".*" failed\.
 ignoreregex =
 ```
 > action.d/cloudflare.conf
