@@ -1,6 +1,6 @@
 ## Nextcloud docker setup:
 
-### Suggested to create NextCloud database using MariaDB
+### Suggested procedure to create NextCloud database using MariaDB
 
 ```
 docker exec -it mariadb mysql -uroot -p$MYSQL_ROOT_PASSWORD
