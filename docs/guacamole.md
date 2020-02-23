@@ -118,7 +118,7 @@ actionunban = curl -s -X DELETE "https://api.cloudflare.com/client/v4/user/firew
 #
 # action = %(action_cf_mwl)s
 # Name of the jail in your jail.local file. default = [jail name]
-name = default
+# name = default
 
 # Option: cfuser
 # Notes.: Replaces <cfuser> in actionban and actionunban with cfuser value below
@@ -156,7 +156,14 @@ cftoken =
 </configuration>
 ```
 
-* Some general tips:
-    - Enter fail2ban mode: `fail2ban-client`
+* Some fail2ban commands:
+    - Enter fail2ban mode: 
+    ```
+    docker exec -it fail2ban /bin/sh
+    fail2ban-client
+    ```
     - Check the status of the jail: `fail2ban-client status guacamole-auth`
+    - Check regex filter: `fail2ban-regex /var/log/guacamole/guacd.log /data/filter.d/guacamole-auth.conf`
     - Unban with: `fail2ban-client set guacamole-auth unbanip x.x.x.x`
+    - Check iptables: `iptables -L <jail> --line-numbers`
+    - Other commands [here](https://www.fail2ban.org/wiki/index.php/Commands)
