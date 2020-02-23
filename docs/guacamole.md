@@ -1,6 +1,6 @@
 ## Guacamole docker setup:
 
-### Suggested to create Guacamole database using MariaDB
+### Suggested procedure to create Guacamole database using MariaDB
 
 ```
 docker exec -it mariadb mysql -uroot -p$MYSQL_ROOT_PASSWORD
