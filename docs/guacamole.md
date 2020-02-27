@@ -33,6 +33,7 @@ maxretry = 5
 ```
 > filter.d/guacamole_auth.conf
 ```
+# For regex to work properly fail2ban and app whose log we are filtering needs to have correct timezone configured (TZ)
 [Definition]
 maxlines = 1
 datepattern = ^%%H:%%M:%%S\.%%f
