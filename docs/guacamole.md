@@ -18,12 +18,12 @@ exit
 
 * Referenced from [here](https://github.com/crazy-max/docker-fail2ban/tree/master/examples/jails)
 
-> jail.d/guacamole.conf
+> jail.d/guacamole_auth.conf
 ```
 [DEFAULT]
 banaction = cloudflare
 
-[guacamole-auth]
+[guacamole_auth]
 enabled = true
 logpath = /var/log/guacamole/guacd.log
 port = http,https
@@ -31,9 +31,11 @@ port = http,https
 bantime = -1
 maxretry = 5
 ```
-> filter.d/guacamole-auth.conf
+> filter.d/guacamole_auth.conf
 ```
 [Definition]
+maxlines = 1
+datepattern = ^%%H:%%M:%%S\.%%f
 failregex = \bAuthentication attempt from \[<HOST>(?:,.*)?\] for user ".*" failed\.
 ignoreregex =
 ```
