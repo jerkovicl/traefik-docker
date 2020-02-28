@@ -1,3 +1,5 @@
+# Cloudflare setup
+
 Rather than repost the excellent instructions on how to initially set up Cloudflare as your DNS provider, here is the link to their page: https://support.cloudflare.com/hc/en-us/articles/201720164-Step-2-Create-a-Cloudflare-account-and-add-a-website
 
 Note that if you have multiple sites you do NOT need a separate account for each. You can add multiple sites, each with a different IP, to the same Cloudflare account. They will all share the same API - which makes it easier to manage - but each has their own IPs, A Record(s), CNAMEs, Page Rules, etc.
