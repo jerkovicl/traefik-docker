@@ -25,7 +25,7 @@ banaction = cloudflare
 
 [guacamole_auth]
 enabled = true
-logpath = /var/log/guacamole/guacd.log
+logpath = /var/log/docker/guacamole/guacd.log
 port = http,https
 
 bantime = -1
@@ -166,7 +166,7 @@ cftoken =
     fail2ban-client
     ```
     - Check the status of the jail: `fail2ban-client status guacamole-auth`
-    - Check regex filter: `fail2ban-regex /var/log/guacamole/guacd.log /data/filter.d/guacamole-auth.conf`
+    - Check regex filter: `fail2ban-regex /var/log/docker/guacamole/guacd.log /data/filter.d/guacamole-auth.conf`
     - Unban with: `fail2ban-client set guacamole-auth unbanip x.x.x.x`
     - Check iptables: `iptables -L <jail> --line-numbers`
     - Other commands [here](https://www.fail2ban.org/wiki/index.php/Commands)
