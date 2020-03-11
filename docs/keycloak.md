@@ -34,6 +34,6 @@ https://geek-cookbook.funkypenguin.co.nz/recipes/keycloak/setup-oidc-provider/
 [Docker image](https://hub.docker.com/r/jboss/keycloak/)  
 [Keycloak docker recipe guide](https://geek-cookbook.funkypenguin.co.nz/recipes/keycloak/)  
 [Keycloak docker info](https://github.com/keycloak/keycloak-containers/blob/master/server/README.md)  
-[OpenId configuration url](https://<your-keycloak-url>/realms/master/.well-known/openid-configuration) 
-[Keycloak Brute Force info](https://github.com/keycloak/keycloak-documentation/blob/master/server_admin/topics/threat/brute-force.adoc)
+[OpenId configuration url](https://<your-keycloak-url>/realms/master/.well-known/openid-configuration)  
+[Keycloak Brute Force info](https://github.com/keycloak/keycloak-documentation/blob/master/server_admin/topics/threat/brute-force.adoc) 
 [Keycloak Auditing and Events configuration](https://www.keycloak.org/docs/latest/server_admin/#auditing-and-events)
