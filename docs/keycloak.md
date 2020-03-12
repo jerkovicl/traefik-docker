@@ -31,8 +31,8 @@ https://geek-cookbook.funkypenguin.co.nz/recipes/keycloak/setup-oidc-provider/
 - set permissions and ownership cause docker container user PUID is 1000:
 
   ```
-  sudo chmod 664 /var/log/{yourdir}/mylogfile.log
-  sudo chown $USER:$USER /var/log/{yourdir}/mylogfile.log
+  sudo chmod 664 /var/log/docker/server.log
+  sudo chown $USER:$USER /var/log/docker/server.log
   ```
 
 ### Some additional links
