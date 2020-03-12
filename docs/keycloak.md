@@ -28,7 +28,7 @@ https://geek-cookbook.funkypenguin.co.nz/recipes/keycloak/setup-oidc-provider/
 ### Fail2Ban Integration
 
 - create log file first `touch /var/log/docker/server.log`
-- set permissions and ownership cause docker container user PUID is 1000:
+- set permissions and ownership cause docker container user **PUID** is **1000**:
 
   ```
   sudo chmod 664 /var/log/docker/server.log
