@@ -1,13 +1,5 @@
 
 #Reference: https://www.smarthomebeginner.com/traefik-reverse-proxy-tutorial-for-docker
-    
-# Setup bitwarden database
-    # docker exec -it mariadb mysql -uroot -p$MYSQL_ROOT_PASSWORD
-    # CREATE DATABASE bitwarden CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
-    # GRANT ALL PRIVILEGES ON bitwarden.* TO 'bitwarden'@'bitwarden.traefik_proxy' IDENTIFIED BY '<password>';
-    # FLUSH PRIVILEGES;
-    # exit
-
 #Requirement: nano .env -> Set environmental variables: ${$USERDIR}, ${PUID}, ${PGID}, ${TZ}, ${DOMAINNAME}, ${CLOUDFLARE_EMAIL},  ${CLOUDFLARE_API_KEY}, ${HTTP_USERNAME}, ${HTTP_PASSWORD}, ${PLEX_CLAIM} etc. as explained in the reference.
 
 version: "3.7"
@@ -1611,6 +1603,7 @@ services:
       - SSMTP_USER=${SMTP_EMAIL}
       - SSMTP_PASSWORD=${SMTP_PASSWORD} # Create an "app password" if you use 2FA
       - SSMTP_TLS=TLS
+      
   # Paperless - Documents Storage
   # https://paperless.readthedocs.io/en/latest/utilities.html#the-exporter
   # extra env vars: https://github.com/the-paperless-project/paperless/blob/master/paperless.conf.example
