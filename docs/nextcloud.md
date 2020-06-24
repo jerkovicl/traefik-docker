@@ -39,6 +39,14 @@ sudo -u abc php /config/www/nextcloud/occ db:convert-filecache-bigint
 exit
 ```
 
+- If you have missing indexes warning:  
+
+```
+docker exec -it nextcloud sh
+sudo -u abc php /config/www/nextcloud/occ db:add-missing-indices
+exit
+```
+
 ### Redis setup (optional)
 
 - If you have a Redis server you can connect to it in `$USERDIR/docker/nextcloud/www/nextcloud/config/config.php`
