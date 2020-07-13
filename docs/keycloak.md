@@ -18,7 +18,7 @@ exit
 docker exec keycloak keycloak/bin/add-user-keycloak.sh -u <username> -p <password>
 ```
 
-- Setup OIDC provider using instructions below (fill out $CLIENT_ID and $CLIENT_SECRET env variables after that):
+- Setup OIDC provider using instructions below (fill out $CLIENT_ID (traefik-forward-auth for example) and $CLIENT_SECRET env variables after that):
 
 ```
 // redirect uri --> https://auth.domain.ltd/_oauth
