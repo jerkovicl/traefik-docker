@@ -10,6 +10,7 @@ docker exec -it funkwhale manage createsuperuser
 
 - create library on this page `https://domain.ltd/content/libraries` and save library id to fill $LIBRARY_ID env variable in container
 
+- Official docs [here](https://docs.funkwhale.audio/installation/docker.html#docker-mono-container)
 
 ### Import music
 
@@ -19,5 +20,3 @@ docker exec -it funkwhale manage createsuperuser
 // For file structures similar to ./Artist/Album/Track.mp3
 docker exec -it funkwhale manage import_files $LIBRARY_ID "/music/**/**/*.mp3" --in-place --async --recursive
 ```
-
-* Official docs [here](https://docs.funkwhale.audio/installation/docker.html#docker-mono-container)
