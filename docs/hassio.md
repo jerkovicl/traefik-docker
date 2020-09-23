@@ -21,6 +21,7 @@ payload: true
 ```
 
 * [MQTT Client](https://github.com/thomasnordquist/MQTT-Explorer)
+* [Pairing Ikea Tradfri bulb example](https://www.zigbee2mqtt.io/devices/LED1836G9.html)
 
 ## SmartThings
 
