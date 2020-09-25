@@ -11,7 +11,7 @@
 * More info about installation [here](https://www.home-assistant.io/hassio/installation/#alternative-install-home-assistant-supervised-on-a-generic-linux-host)
 
 
-## MQTT
+## ZIGBEE2MQTT
 
 * Publish to topic using Developer tools / Services / mqtt.publish service
 ```yaml
