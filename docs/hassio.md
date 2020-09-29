@@ -20,6 +20,12 @@ topic: zigbee2mqtt/bridge/config/permit_join
 payload: true
 ```
 
+* Turn lights off/on via MQTT
+```yaml
+topic: zigbee2mqtt/kitchen_light_1/set
+payload: {"state": "ON"}
+```
+
 * [MQTT Client](https://github.com/thomasnordquist/MQTT-Explorer)
 * [Pairing Ikea Tradfri bulb example](https://www.zigbee2mqtt.io/devices/LED1836G9.html)
 
