@@ -2,7 +2,7 @@
 
 ### Setup Network access
 
-* You need to set two custom access urls in __Plex Server Settings -> Network_ settings page:  
+* You need to set two custom access urls in __Plex Server Settings -> Network__ settings page:  
 `http://<server_lan_ip>:32400/,https://<plex.yourdomainname>:443/`
 
 * You can actually turn off __Remote Access__ at this point.
