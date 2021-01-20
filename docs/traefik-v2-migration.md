@@ -5,3 +5,4 @@
 * [Migration tool from Traefik v1 to Traefik v2](https://github.com/containous/traefik-migration-tool)
 * [Great migration guide by @moritzvd](https://moritzvd.com/upgrade-traefik-2/)
 * [Another migration guide by @disklosr](https://offby2.com/posts/002-introduction-to-traefik-v2-with-docker/)
+* [Traefik TLS configuration SSLlabs +A](https://adminsecurity.guru/traefik-v2-ssllabs-A-plus/)
