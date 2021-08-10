@@ -24,6 +24,7 @@ docker exec keycloak keycloak/bin/add-user-keycloak.sh -u <username> -p <passwor
 // redirect uri --> https://auth.domain.ltd/_oauth
 https://geek-cookbook.funkypenguin.co.nz/recipes/keycloak/setup-oidc-provider/
 ```
+- Setup Two-Factor Authentication using instructions [here](https://ultimatesecurity.pro/post/2fa/)
 
 ### Fail2Ban Integration
 
