@@ -102,3 +102,7 @@ Disable "Remote Access", Everything will still connect, including all the apps.
 
 **Once you applied this changes, make sure you clear your browser cache and purge the CF cache!**  
 **Credit to PGBlitz for this guide**
+
+### Some additional links
+
+* https://www.smarthomebeginner.com/cloudflare-settings-for-traefik-docker/
