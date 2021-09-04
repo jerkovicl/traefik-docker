@@ -1,4 +1,3 @@
-
 #Reference: https://www.smarthomebeginner.com/traefik-reverse-proxy-tutorial-for-docker
 #Requirement: nano .env -> Set environmental variables: ${$USERDIR}, ${PUID}, ${PGID}, ${TZ}, ${DOMAINNAME}, ${CLOUDFLARE_EMAIL},  ${CLOUDFLARE_API_KEY}, ${HTTP_USERNAME}, ${HTTP_PASSWORD}, ${PLEX_CLAIM} etc. as explained in the reference.
 
@@ -52,7 +51,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${USERDIR}/docker/traefik:/etc/traefik
       - ${USERDIR}/docker/shared:/shared
-      - /var/log/docker/traefik.log:/var/log/docker/traefik.log # for fail2ban - make sure to touch file before starting container
+      - /var/log/docker:/var/log/docker # for fail2ban - make sure to touch file before starting container
  
 # The auth gate for SSO
   traefik-forward-auth:
@@ -84,7 +83,7 @@ services:
       - "traefik.frontend.auth.forward.trustForwardHeader=true"
       - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
     depends_on:
-      - keycloak
+      #- keycloak
       - traefik
       
 # Keycloak - identity and access management solution
@@ -102,11 +101,11 @@ services:
 #      - ${USERDIR}/docker/keycloak/config.json:/config.json
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
-      - /var/log/docker/keycloak:/opt/jboss/keycloak/standalone/log
+      #- /var/log/docker/keycloak:/opt/jboss/keycloak/standalone/log
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
-      - KEYCLOAK_USER=${KEYCLOAK_USER}
+      - KEYCLOAK_USER=${KEYCLOAK_USER} # enable on startup only
       - KEYCLOAK_PASSWORD=${KEYCLOAK_PASSWORD}
 #      - KEYCLOAK_IMPORT=/config.json
       - DB_VENDOR=mariadb
@@ -629,7 +628,21 @@ services:
       - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
       - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
       - "traefik.frontend.auth.forward.trustForwardHeader=true"
-
+      
+# Sync Imdb watchlist to Trakt.tv
+  imdb_trakt_sync:
+    image: ghcr.io/josh/imdb-trakt-sync
+    container_name: imdb-trakt-sync
+    restart: always
+    environment:
+      - IMDB_UBID_MAIN=${IMDB_UBID}
+      - IMDB_AT_MAIN=${IMDB_AT}
+      - IMDB_RATINGS_ID=${IMDB_RATINGS_ID}
+      - IMDB_WATCHLIST_ID=${IMDB_LIST_ID}
+      - TRAKT_CLIENT_ID=${TRAKT_CLIENT_ID}
+      - TRAKT_ACCESS_TOKEN=${TRAKT_ACCESS_TOKEN}
+      - TICKERD_INTERVAL=24h
+      
 # Lazylibrarian  – Ebooks and Management
   lazylibrarian:
     image: "linuxserver/lazylibrarian"
@@ -681,25 +694,30 @@ services:
     container_name: plexms
     restart: always
     image: plexinc/pms-docker
+    #devices:
+    #  - /dev/dri:/dev/dri # have a Plex Pass and an Intel processor with QuickSync for harware transcoding
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - ${USERDIR}/docker/plexms:/config
       - ${USERDIR}/Downloads/plex_tmp:/transcode
+      #- /dev/shm:/transcode # Offload transcoding to RAM if you have enough RAM
       - ${USERDIR}/media:/media
       - ${USERDIR}/docker/shared:/shared
     ports:
       - "32400:32400/tcp"
-      - "3005:3005/tcp"
-      - "8324:8324/tcp"
+      - "3005:3005/tcp" # controlling Plex Home Theater via Plex Companion
+      - "8324:8324/tcp" # controlling Plex for Roku via Plex Companion
       - "32469:32469/tcp"
-      - "1900:1900/udp"
-      - "32410:32410/udp"
-      - "32412:32412/udp"
-      - "32413:32413/udp"
-      - "32414:32414/udp"
+      - "1900:1900/udp" # access to the Plex DLNA Server
+      - "32410:32410/udp" # GDM network discovery
+      - "32412:32412/udp" # GDM network discovery
+      - "32413:32413/udp" # GDM network discovery
+      - "32414:32414/udp" # GDM network discovery
     environment:
       - TZ=${TZ}
       - HOSTNAME="Docker Plex"
-      - PLEX_CLAIM=${PLEX_CLAIM}
+      - PLEX_CLAIM=${PLEX_CLAIM} # obtain from plex.tv/claim
       - PLEX_UID=${PUID}
       - PLEX_GID=${PGID}
       - ADVERTISE_IP="http://SERVER-IP:32400/" # IP Address of your server, run ifconfig
@@ -951,9 +969,10 @@ services:
     image: "linuxserver/calibre"
     container_name: "calibre"
     volumes:
-      - ${USERDIR}/Downloads/completed:/import
-      - ${USERDIR}/media/books:/books
-      - ${USERDIR}/docker/calibre:/config
+      - ${USERDIR}/Downloads/completed:/import:rw
+      #- ${USERDIR}/Downloads/completed:/data/downloads:rw
+      - ${USERDIR}/media/books:/books:rw
+      - ${USERDIR}/docker/calibre:/config:rw
       - /etc/localtime:/etc/localtime:ro
 #    ports:
 #        - "XXXX:8080"
@@ -963,6 +982,7 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      - UMASK_SET=002 #optional
     networks:
       - traefik_proxy
     labels:
@@ -970,7 +990,7 @@ services:
       - "traefik.backend=calibre"
 #      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /calibre"
       - "traefik.frontend.rule=Host:calibre.${DOMAINNAME}"
-      - "traefik.port=8081"
+      - "traefik.port=8080"
       - "traefik.docker.network=traefik_proxy"
       - "traefik.frontend.passHostHeader=true"
       - "traefik.frontend.headers.SSLForceHost=true"
@@ -1222,37 +1242,37 @@ services:
 # Bitwarden - Password Vault
   bitwarden:
     container_name: bitwarden
-    image: bitwardenrs/server-mysql
+    image: vaultwarden/server
     restart: always
     networks:
       - traefik_proxy
-#    ports:
-#      - "8888:80"
+    #ports:
+    #  - "8888:80"
     volumes:
       - $USERDIR/docker/bitwarden:/data
       - /var/log/docker:/var/log/docker
       - /etc/localtime:/etc/localtime:ro
     environment:
-      - SIGNUPS_ALLOWED=false # Change to false after first login
+      - SIGNUPS_ALLOWED=true # Change to false after first login
       - INVITATIONS_ALLOWED=false
-      - WEBSOCKET_ENABLED=false #true
+      - WEBSOCKET_ENABLED=true
       - LOG_FILE=/var/log/docker/bitwarden.log
       - SMTP_HOST=smtp.gmail.com
       - SMTP_FROM=${SMTP_EMAIL}
       - SMTP_PORT=587
       - SMTP_SSL=true
       - SMTP_USERNAME=${SMTP_EMAIL}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_PASSWORD=${SMTP_PASSWORD} # set app password
       - DOMAIN=https://bitwarden.$DOMAINNAME
       - ADMIN_TOKEN=supersecret
       - DATABASE_URL=mysql://bitwarden:${MYSQL_ROOT_PASSWORD}@mariadb/bitwarden
+      #- ROCKET_PORT=8888
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=bitwarden"
-      - "traefik.frontend.rule=Host:bitwarden.${DOMAINNAME}"
-      #- "traefik.web.frontend.rule=Host:bitwarden.${DOMAINNAME}"
-      - "traefik.port=80"
-      # - "traefik.web.port=80"
+      #- "traefik.frontend.rule=Host:bitwarden.${DOMAINNAME}"
+      - "traefik.web.frontend.rule=Host:bitwarden.${DOMAINNAME}"
+      #- "traefik.port=80"
+      - "traefik.web.port=80"
       - "traefik.hub.frontend.rule=Host:bitwarden.${DOMAINNAME};Path:/notifications/hub"
       - "traefik.hub.port=3012"
       - "traefik.hub.protocol=ws"
@@ -1305,6 +1325,7 @@ services:
     volumes:
       - ${USERDIR}/docker/guacamole:/etc/guacamole:rw
       - /var/log/docker/guacamole:/usr/local/tomcat/logs
+      - ${USERDIR}/.fonts/delugia-complete/DelugiaComplete.ttf:/usr/share/fonts/DelugiaComplete.ttf
     networks:
       - traefik_proxy
       - default
@@ -1461,7 +1482,8 @@ services:
     restart: always
     volumes:
       - ${USERDIR}/docker/cloudcmd:/root
-      - ${USERDIR}/docker:/mnt/fs
+      - /:/mnt/fs
+      #- ${USERDIR}/docker:/mnt/fs
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
@@ -1592,9 +1614,6 @@ services:
       - F2B_LOG_TARGET=/var/log/docker/fail2ban.log
       - F2B_LOG_LEVEL=INFO
       - F2B_DB_PURGE_AGE=1d
-      #- F2B_MAX_RETRY=3
-      #- F2B_DEST_EMAIL=webmaster@example.com
-      #- F2B_SENDER=fail2ban@example.com
       #- F2B_ACTION=%(action_mw)s # %(action_mw)s or %(action_mwl)s to send mail
       - F2B_IPTABLES_CHAIN=DOCKER-USER
       - SSMTP_HOST=smtp.gmail.com
@@ -1603,7 +1622,6 @@ services:
       - SSMTP_USER=${SMTP_EMAIL}
       - SSMTP_PASSWORD=${SMTP_PASSWORD} # Create an "app password" if you use 2FA
       - SSMTP_TLS=TLS
-      
   # Paperless - Documents Storage
   # https://paperless.readthedocs.io/en/latest/utilities.html#the-exporter
   # extra env vars: https://github.com/the-paperless-project/paperless/blob/master/paperless.conf.example
@@ -1705,7 +1723,7 @@ services:
       - NET_BIND_SERVICE
     environment:
       - TZ=${TZ}
-      - ServerIP=192.168.5.91
+      - ServerIP=192.168.5.36
       - DNS1=172.28.0.3
       - DNS2=no
       - VIRTUAL_HOST=pihole.${DOMAINNAME}
@@ -1715,7 +1733,7 @@ services:
     volumes:
       - ${USERDIR}/docker/pihole:/etc/pihole
       - ${USERDIR}/docker/pihole/resolv.conf/resolv.conf:/etc/resolv.conf:ro
-      - ${USERDIR}/docker/pihole/pihole.log:/var/log/pihole.log
+      #- ${USERDIR}/docker/pihole/pihole.log:/var/log/pihole.log
       - ${USERDIR}/docker/pihole/dnsmasq.d:/etc/dnsmasq.d
        ## More info on these scripts here: https://github.com/mmotti
       - ${USERDIR}/docker/pihole/scripts/fetchFilterLists.sh:/usr/local/bin/fetchFilterLists.sh
@@ -1734,17 +1752,36 @@ services:
       skynet:
         ipv4_address: 172.28.0.2
     ports:
-    #     - 53:53/tcp
-    #     - 53:53/udp
-    #     - 67:67/udp
-      - 8053:80
-    #     - 8183:443
+      - '53:53/tcp'
+      - '53:53/udp'
+      # - '67:67/udp'
+      - '8053:80'
+      - '8183:443'
     labels:
       - "traefik.enable=true"
-      - "traefik.frontend.rule=Host:pihole.${DOMAINNAME}"
+      - "traefik.backend=pihole"
       - "traefik.port=80"
-      - "traefik.protocol=http"
-      - "traefik.docker.network=skynet"
+      - "traefik.frontend.rule=Host:pihole.${DOMAINNAME}"
+      #- "traefik.frontend.rule=HostRegexp:pihole.${DOMAINNAME},{catchall:.*}"
+      - "traefik.frontend.priority=1"
+      - "traefik.docker.network=traefik_proxy"
+      # - "traefik.protocol=http"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=pihole.${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
+      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
+      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
+      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
   #resolution_type: GETDNS_RESOLUTION_STUB
   #dns_transport_list:
@@ -1767,6 +1804,7 @@ services:
   # https://raw.githubusercontent.com/getdnsapi/stubby/develop/stubby.yml.example
   #- address_data: 1.1.1.1
   #  tls_auth_name: "cloudflare-dns.com" #"dns.google"
+  # touch /home/user/docker/stubby/stubby.yml
   # Stubby - DNS Privacy stub resolver (using DNS-over-TLS)
   stubby:
     image: yegle/stubby-dns:latest
@@ -1855,8 +1893,8 @@ networks:
   skynet:
     external:
       name: skynet
-    ipam:
-      config:
-        - subnet: 172.28.0.0/16
+#    ipam:
+#      config:
+#        - subnet: 172.28.0.0/16
   default:
       driver: bridge
