@@ -51,7 +51,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${USERDIR}/docker/traefik:/etc/traefik
       - ${USERDIR}/docker/shared:/shared
-      - /var/log/docker:/var/log/docker # for fail2ban - make sure to touch file before starting container
+      - /var/log/docker:/var/log/docker # for fail2ban - make sure to touch file traefik.log before starting container
  
 # The auth gate for SSO
   traefik-forward-auth:
