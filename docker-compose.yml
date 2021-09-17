@@ -1475,6 +1475,40 @@ services:
     networks:
       - traefik_proxy
 
+## Samba - File sharing
+## to access from win10 \\SERVER_IP\SHARE (Where SERVER_IP is the IP address of your Samba server and SHARE is the name of the share
+  samba:
+    container_name: samba
+    image: dperson/samba
+    restart: always
+    command: >
+      -s "share;/share;yes;no;yes" -p
+    #command: '-s "share;/share;yes;no;no;bob" -u "bob;bobspasswd" -p'
+    networks:
+      - traefik_proxy
+    ports:
+      - "137:137/udp"
+      - "138:138/udp"
+      - "139:139/tcp"
+      - "445:445/tcp"
+    #read_only: true
+    tmpfs:
+      - /tmp
+    stdin_open: true
+    tty: true
+    volumes:
+      - /mnt/storage:/share
+      #- ${USERDIR}/docker/samba:/etc/samba
+    environment:
+      - TZ=${TZ}
+      - USERID=${PUID}
+      - GROUPID=${PGID}
+      - NMBD=True
+      - SMB=True
+      - RECYCLE=True
+      - USER=${SAMBA_USER};${SAMBA_PASSWORD}
+      - WORKGROUP=test
+      
 # Cloud Commander - web file manager
   cloudcmd:
     image: coderaiser/cloudcmd
