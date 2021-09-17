@@ -51,7 +51,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${USERDIR}/docker/traefik:/etc/traefik
       - ${USERDIR}/docker/shared:/shared
-      - /var/log/docker:/var/log/docker # for fail2ban - make sure to touch file traefik.log before starting container
+      - /var/log/docker:/var/log/docker # for fail2ban - make sure to touch file before starting container
  
 # The auth gate for SSO
   traefik-forward-auth:
@@ -463,7 +463,7 @@ services:
     volumes:
       - ${USERDIR}/docker/radarr:/config
       - ${USERDIR}/Downloads/completed:/downloads
-      - ${USERDIR}/media/movies:/movies
+      - /mnt/storage/media/movies:/movies
       - /etc/localtime:/etc/localtime:ro
       - ${USERDIR}/docker/shared:/shared
 #    ports:
@@ -506,7 +506,7 @@ services:
     volumes:
       - ${USERDIR}/docker/sonarr:/config
       - ${USERDIR}/Downloads/completed:/downloads
-      - ${USERDIR}/media/tvshows:/tv
+      - /mnt/storage/media/tvshows:/tv
       - /etc/localtime:/etc/localtime:ro
       - ${USERDIR}/docker/shared:/shared
 #    ports:
@@ -550,7 +550,7 @@ services:
     volumes:
       - ${USERDIR}/docker/lidarr:/config
       - ${USERDIR}/Downloads/completed:/downloads
-      - ${USERDIR}/media/music:/music
+      - /mnt/storage/media/music:/music
       - /etc/localtime:/etc/localtime:ro
       - ${USERDIR}/docker/shared:/shared
 #    ports:
@@ -598,9 +598,9 @@ services:
       - UMASK_SET=022 #optional
     volumes:
       - ${USERDIR}/docker/bazarr:/config
-      - ${USERDIR}/media/movies:/movies
+      - /mnt/storage/media/movies:/movies
       - /etc/localtime:/etc/localtime:ro
-      - ${USERDIR}/media/tvshows:/tv
+      - /mnt/storage/media/tvshows:/tv
     # ports:
     # - 6767:6767
     networks:
@@ -650,7 +650,7 @@ services:
     volumes:
       - ${USERDIR}/docker/lazylibrarian:/config
       - ${USERDIR}/Downloads/completed:/downloads
-      - ${USERDIR}/media/books:/books
+      - /mnt/storage/media/books:/books
       - /etc/localtime:/etc/localtime:ro
       - ${USERDIR}/docker/shared:/shared
 #    ports:
@@ -702,7 +702,7 @@ services:
       - ${USERDIR}/docker/plexms:/config
       - ${USERDIR}/Downloads/plex_tmp:/transcode
       #- /dev/shm:/transcode # Offload transcoding to RAM if you have enough RAM
-      - ${USERDIR}/media:/media
+      - /mnt/storage/media:/media
       - ${USERDIR}/docker/shared:/shared
     ports:
       - "32400:32400/tcp"
@@ -759,8 +759,8 @@ services:
       - UMASK_SET=022 #optional
     volumes:
       - ${USERDIR}/docker/jellyfin:/config
-      - ${USERDIR}/media/movies:/data/movies
-      - ${USERDIR}/media/tvshows:/data/tvshows
+      - /mnt/storage/media/movies:/data/movies
+      - /mnt/storage/media/tvshows:/data/tvshows
       - /etc/localtime:/etc/localtime:ro
      # - /path for transcoding:/transcode #optional
      # - /opt/vc/lib:/opt/vc/lib #optional for raspberry pi
@@ -811,7 +811,7 @@ services:
       - LIBRARY_ID=${LIBRARY_ID}
     volumes: 
       - ${USERDIR}/docker/funkwhale:/data
-      - ${USERDIR}/media/music:/music
+      - /mnt/storage/media/music:/music
     labels:
       - "traefik.enable=true"
       - "traefik.backend=funkwhale"
@@ -845,7 +845,7 @@ services:
 #    ports:
 #      - "5800:5800"
     volumes:
-      - $USERDIR/media/music:/storage:rw
+      - /mnt/storage/media/music:/storage:rw
       - $USERDIR/docker/picard:/config:rw
     environment:
       - USER_ID=${PUID}
@@ -889,9 +889,9 @@ services:
       - MAXMEM=1024
     volumes:
       - ${USERDIR}/docker/ubooquity:/config
-      - ${USERDIR}/media/books:/books
-      - ${USERDIR}/media/comics:/comics
-      - ${USERDIR}/media/files:/files
+      - /mnt/storage/media/books:/books
+      - /mnt/storage/media/comics:/comics
+      - /mnt/storage/media/files:/files
     ports:
       - 2202:2202
       - 2203:2203
@@ -929,7 +929,7 @@ services:
     container_name: "calibre-web"
     volumes:
       - ${USERDIR}/docker/calibre_web:/config
-      - ${USERDIR}/media/books:/books
+      - /mnt/storage/media/books:/books
       - /etc/localtime:/etc/localtime:ro
 #    ports:
 #        - "XXXX:8083"
@@ -971,7 +971,7 @@ services:
     volumes:
       - ${USERDIR}/Downloads/completed:/import:rw
       #- ${USERDIR}/Downloads/completed:/data/downloads:rw
-      - ${USERDIR}/media/books:/books:rw
+      - /mnt/storage/media/books:/books:rw
       - ${USERDIR}/docker/calibre:/config:rw
       - /etc/localtime:/etc/localtime:ro
 #    ports:
@@ -1253,7 +1253,7 @@ services:
       - /var/log/docker:/var/log/docker
       - /etc/localtime:/etc/localtime:ro
     environment:
-      - SIGNUPS_ALLOWED=true # Change to false after first login
+      - SIGNUPS_ALLOWED=false # Change to false after first login
       - INVITATIONS_ALLOWED=false
       - WEBSOCKET_ENABLED=true
       - LOG_FILE=/var/log/docker/bitwarden.log
