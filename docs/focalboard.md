@@ -26,7 +26,7 @@ CREATE USER boardsuser WITH PASSWORD 'boardsuser-password';
     "serverRoot": "http://localhost:8000",
     "port": 8000,
     "dbtype": "mysql",
-    "dbconfig": "djlujo:BeowulfB6@tcp(127.0.0.1:3306)/boards",
+    "dbconfig": "focalboard:password@tcp(mariadb:3306)/boards",
     "postgres_dbconfig": "dbname=boards sslmode=disable",
     "useSSL": false,
     "webpath": "./pack",
