@@ -34,7 +34,7 @@ exit
 }
 ```
 
-- or for postgress:
+- or for postgres:
 
 ```
 {
