@@ -24,3 +24,10 @@ __fsname=name__: sets the name of the filesystem as seen in mount, df, etc. Defa
   # <file system>   <mount point>   <type>         <options>                                      <dump>  <pass>
     /mnt/storage*    /mnt/virt      fuse.mergerfs  defaults,allow_other,use_ino,fsname=mergerFS     0       0
   ```
+
+### Additional info:
+* [Docker plex issue](https://github.com/trapexit/mergerfs/issues/463)
+* [Docker issues](https://forum.openmediavault.org/index.php?thread/38343-once-and-for-all-should-all-docker-containers-be-stored-outside-of-mergerfs/)
+* [Another MergerFS guide](https://zackreed.me/mergerfs-another-good-option-to-pool-your-snapraid-disks/)
+* [Move mount point guide](https://help.ubuntu.com/community/MoveMountpointHowto)
+* [Mount a partition to two mount points](https://serverfault.com/questions/451223/mount-a-partition-to-two-mount-points)
