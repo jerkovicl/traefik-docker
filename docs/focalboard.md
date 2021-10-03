@@ -5,7 +5,7 @@
 ```
 docker exec -it mariadb mysql -uroot -p$MYSQL_ROOT_PASSWORD
 CREATE DATABASE boards CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
-GRANT ALL PRIVILEGES ON boards.* TO 'focalboard'@'focalboard.traefik_proxy'IDENTIFIED BY '<password>';
+GRANT ALL PRIVILEGES ON boards.* TO 'focalboard'@'focalboard.traefik_proxy' IDENTIFIED BY '<password>';
 FLUSH PRIVILEGES;
 exit
 ```
