@@ -10,6 +10,13 @@ FLUSH PRIVILEGES;
 exit
 ```
 
+### Suggested to create Focalboard database using Postgres
+
+```
+CREATE DATABASE boards;
+CREATE USER boardsuser WITH PASSWORD 'boardsuser-password';
+```
+
 ### First run setup
 
 - Setup config.json for mysql
