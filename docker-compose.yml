@@ -1375,6 +1375,12 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${USERDIR}/docker/netdata:/etc/netdata
+      - ${USERDIR}/docker/netdata:/var/lib/netdata
+      - ${USERDIR}/docker/netdata:/var/cache/netdata
+      - /etc/passwd:/host/etc/passwd:ro
+      - /etc/group:/host/etc/group:ro
+      - /etc/os-release:/host/etc/os-release:ro
     networks:
       - traefik_proxy
     labels:
@@ -1728,6 +1734,332 @@ services:
       - USERMAP_UID=${PUID}
       - USERMAP_GID=${PGID}
     command: ["document_consumer"]
+    
+# Swagger Editor
+  swagger_editor:
+    image: "swaggerapi/swagger-editor"
+    container_name: "swagger-editor"
+    volumes:
+      - ${USERDIR}/docker/swaggereditor:/tmp
+    ports:
+      - "8133:8080"
+    restart: always
+    environment:
+      #- SWAGGER_FILE=/tmp/swagger.json
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+#      - "traefik.backend=swagger"
+#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /swagger"
+      - "traefik.frontend.rule=Host:swagger.${DOMAINNAME}"
+      - "traefik.port=8080"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=swagger.${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
+      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
+      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
+      - "traefik.frontend.auth.forward.trustForwardHeader=true"
+
+# Focalboard - alternative to Trello, Notion, and Asana
+  focalboard:
+    image: mattermost/focalboard
+    container_name: focalboard
+    volumes:
+      - ${USERDIR}/docker/focalboard/config.json:/opt/focalboard/config.json
+    #ports:
+    #  - "8135:8080"
+    restart: always
+    environment:
+      - VIRTUAL_HOST=focalboard.${DOMAINNAME}
+      - VIRTUAL_PORT=8000
+      #- VIRTUAL_PROTO=http
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=focalboard"
+#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /focalboard"
+      - "traefik.frontend.rule=Host:focalboard.${DOMAINNAME}"
+      - "traefik.port=8000"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=focalboard.${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
+      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
+      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
+      - "traefik.frontend.auth.forward.trustForwardHeader=true"
+      
+# StandardNotes - personal notes server
+  syncing-server-js:
+    image: standardnotes/syncing-server-js:latest
+    container_name: syncing-server-js-standalone
+    depends_on:
+      - mariadb
+      - redis
+    entrypoint: [
+      "./wait-for.sh", "mariadb", "3306",
+      "./wait-for.sh", "redis", "6379",
+      "./docker/entrypoint.sh", "start-web"
+    ]
+    env_file: envfiles/standardnotes/.env
+    environment:
+      PORT: 3000
+    restart: always
+    networks:
+      - traefik_proxy
+
+  syncing-server-js-worker:
+    image: standardnotes/syncing-server-js:latest
+    container_name: syncing-server-js-worker-standalone
+    depends_on:
+      - mariadb
+      - redis
+      - syncing-server-js
+    entrypoint: [
+      "./wait-for.sh", "mariadb", "3306",
+      "./wait-for.sh", "redis", "6379",
+      "./wait-for.sh", "syncing-server-js", "3000",
+       "./docker/entrypoint.sh", "start-worker"
+    ]
+    env_file: envfiles/standardnotes/.env
+    environment:
+      PORT: 3000
+    restart: always
+    networks:
+      - traefik_proxy
+
+  api-gateway:
+    image: standardnotes/api-gateway:latest
+    container_name: api-gateway-standalone
+    depends_on:
+      - auth
+      - syncing-server-js
+    restart: always
+    env_file: envfiles/standardnotes/api-gateway.env
+    #ports:
+    #  - 3000:3000
+    environment:
+      PORT: 3000
+      AUTH_JWT_SECRET: '${AUTH_JWT_SECRET}'
+    entrypoint: [
+      "./wait-for.sh", "auth", "3000",
+      "./wait-for.sh", "syncing-server-js", "3000",
+      "./docker/entrypoint.sh", "start-web"
+    ]
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=api-gateway"
+#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /notes"
+      - "traefik.frontend.rule=Host:notes.${DOMAINNAME}"
+      - "traefik.port=3000"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=notes.${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
+      #- "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
+      #- "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
+      #- "traefik.frontend.auth.forward.trustForwardHeader=true"
+
+  auth:
+    image: standardnotes/auth:latest
+    container_name: auth-standalone
+    depends_on:
+      - mariadb
+      - redis
+      - syncing-server-js
+    entrypoint: [
+      "./wait-for.sh", "mariadb", "3306",
+      "./wait-for.sh", "redis", "6379",
+      "./wait-for.sh", "syncing-server-js", "3000",
+      "./docker/entrypoint.sh", "start-web"
+    ]
+    env_file: envfiles/standardnotes/auth.env
+    environment:
+      PORT: 3000
+      DB_HOST: '${DB_HOST}'
+      DB_REPLICA_HOST: '${DB_REPLICA_HOST}'
+      DB_PORT: '${DB_PORT}'
+      DB_DATABASE: '${DB_DATABASE}'
+      DB_USERNAME: '${DB_USERNAME}'
+      DB_PASSWORD: '${DB_PASSWORD}'
+      DB_DEBUG_LEVEL: '${DB_DEBUG_LEVEL}'
+      DB_MIGRATIONS_PATH: '${DB_MIGRATIONS_PATH}'
+      REDIS_URL: '${REDIS_URL}'
+      AUTH_JWT_SECRET: '${AUTH_JWT_SECRET}'
+    restart: always
+    networks:
+      - traefik_proxy
+
+  auth-worker:
+    image: standardnotes/auth:latest
+    container_name: auth-worker-standalone
+    depends_on:
+      - mariadb
+      - redis
+      - auth
+    entrypoint: [
+      "./wait-for.sh", "mariadb", "3306",
+      "./wait-for.sh", "redis", "6379",
+      "./wait-for.sh", "auth", "3000",
+      "./docker/entrypoint.sh", "start-worker"
+    ]
+    env_file: envfiles/standardnotes/auth.env
+    environment:
+      PORT: 3000
+      DB_HOST: '${DB_HOST}'
+      DB_REPLICA_HOST: '${DB_REPLICA_HOST}'
+      DB_PORT: '${DB_PORT}'
+      DB_DATABASE: '${DB_DATABASE}'
+      DB_USERNAME: '${DB_USERNAME}'
+      DB_PASSWORD: '${DB_PASSWORD}'
+      DB_DEBUG_LEVEL: '${DB_DEBUG_LEVEL}'
+      DB_MIGRATIONS_PATH: '${DB_MIGRATIONS_PATH}'
+      REDIS_URL: '${REDIS_URL}'
+      AUTH_JWT_SECRET: '${AUTH_JWT_SECRET}'
+    restart: always
+    networks:
+      - traefik_proxy
+  
+  snext:
+    image: ericpierce/standardnotes-extension-server
+    container_name: snext
+    restart: always
+    command: start-local
+    depends_on:
+      - syncing-server-js
+    ports:
+      - 8011:80
+    volumes:
+      - ${USERDIR}/docker/standardnotes/extensions:/repos
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - TZ=${TZ}
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - SN_EXTS_LISTEN_ADDR=:80
+      - SN_EXTS_REPOS_DIR=/repos
+      - SN_EXTS_DEFINITIONS_DIR=/definitions
+      - SN_EXTS_BASE_URL=https://notes-ext.${DOMAINNAME}
+      - SN_EXTS_UPDATE_INTERVAL_MINS=4320
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=snext"
+#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /notes-ext"
+      - "traefik.frontend.rule=Host:notes-ext.${DOMAINNAME}"
+      - "traefik.port=80"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=notes-ext.${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
+      #- "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
+      #- "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
+      #- "traefik.frontend.auth.forward.trustForwardHeader=true"
+    
+  snweb:
+    container_name: snweb
+    image: standardnotes/web:latest
+    restart: always
+    command: start
+    depends_on:
+      - syncing-server-js
+    ports:
+      - 8010:3001
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - TZ=${TZ}
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - RAILS_ENV=development
+      - PORT=3001
+      - WEB_CONCURRENCY=0
+      - SECRET_KEY_BASE=${AUTH_JWT_SECRET}
+      - APP_HOST=https://notes-web.${DOMAINNAME}
+      - RAILS_SERVE_STATIC_FILES=true
+      - RAILS_LOG_TO_STDOUT=true
+      - EXTENSIONS_MANAGER_LOCATION=extensions/extensions-manager/dist/index.html
+      - BATCH_MANAGER_LOCATION=extensions/batch-manager/dist/index.min.html
+      - SF_DEFAULT_SERVER=https://notes.${DOMAINNAME}
+      - SF_NEXT_VERSION_SERVER=https://notes.${DOMAINNAME}
+      - DATADOG_ENABLED=false
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=snweb"
+#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /notes-web"
+      - "traefik.frontend.rule=Host:notes-web.${DOMAINNAME}"
+      - "traefik.port=3001"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=notes-web.${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
+      #- "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
+      #- "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
+      #- "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 ######### DNS ##########
   # create network:
