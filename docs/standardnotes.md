@@ -10,17 +10,10 @@ FLUSH PRIVILEGES;
 exit
 ```
 
-### Suggested to create Focalboard database using Postgres
-
-```
-CREATE DATABASE boards;
-CREATE USER boardsuser WITH PASSWORD 'boardsuser-password';
-```
-
 ### First run setup
 
 - Check if server is working by going to url: `https://notes.domain.ltd/healthcheck`
-- Activate extensions with url: `notes-ext.domain.ltd`
+- Activate extensions with url: `https://notes-ext.domain.ltd`
 
 ### Some additional links
 
