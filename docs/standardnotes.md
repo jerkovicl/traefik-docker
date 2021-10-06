@@ -17,8 +17,8 @@ exit
 
 ### Some additional links
 
-[Docker setup guide](https://www.blackvoid.club/standard-notes-docker-self-hosted-alternative/amp/)
-[Docker Traefik setup guide](https://ae3.ch/selfhosted-standard-notes-with-docker-and-traefik)
-[Another selfhost guide](https://theselfhostingblog.com/posts/how-to-completely-self-host-standard-notes/)
-[Docker compose example](https://pastebin.com/LFNwgscB)
-[Selfhost extensions repo](https://github.com/iganeshk/standardnotes-extensions)
+[Docker setup guide](https://www.blackvoid.club/standard-notes-docker-self-hosted-alternative/amp/)  
+[Docker Traefik setup guide](https://ae3.ch/selfhosted-standard-notes-with-docker-and-traefik)  
+[Another selfhost guide](https://theselfhostingblog.com/posts/how-to-completely-self-host-standard-notes/)  
+[Docker compose example](https://pastebin.com/LFNwgscB)  
+[Selfhost extensions repo](https://github.com/iganeshk/standardnotes-extensions)  
