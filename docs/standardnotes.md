@@ -22,3 +22,4 @@ exit
 [Another selfhost guide](https://theselfhostingblog.com/posts/how-to-completely-self-host-standard-notes/)  
 [Docker compose example](https://pastebin.com/LFNwgscB)  
 [Selfhost extensions repo](https://github.com/iganeshk/standardnotes-extensions)  
+[Awesome List - collection of editors and themes](https://github.com/jonhadfield/awesome-standard-notes)
