@@ -63,6 +63,12 @@ CREATE USER boardsuser WITH PASSWORD 'boardsuser-password';
 }
 ```
 
+### Fix for failed migrations
+
+```
+update schema_migrations set version = version - 1, dirty = 0;
+```
+
 ### Some additional links
 
 [Linux setup guide](https://www.focalboard.com/download/personal-edition/ubuntu/)  
