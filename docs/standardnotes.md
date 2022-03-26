@@ -24,6 +24,7 @@ exit
 
 ### Some additional links
 
+[Official Docker setup guide](https://docs.standardnotes.com/self-hosting/getting-started)
 [Docker setup guide](https://www.blackvoid.club/standard-notes-docker-self-hosted-alternative/amp/)  
 [Docker Traefik setup guide](https://ae3.ch/selfhosted-standard-notes-with-docker-and-traefik)  
 [Another selfhost guide](https://theselfhostingblog.com/posts/how-to-completely-self-host-standard-notes/)  
