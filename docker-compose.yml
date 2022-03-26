@@ -105,7 +105,7 @@ services:
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
-      - KEYCLOAK_USER=${KEYCLOAK_USER} # enable on startup only
+#      - KEYCLOAK_USER=${KEYCLOAK_USER} # enable on startup only
       - KEYCLOAK_PASSWORD=${KEYCLOAK_PASSWORD}
 #      - KEYCLOAK_IMPORT=/config.json
       - DB_VENDOR=mariadb
@@ -384,7 +384,7 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
-      - UMASK_SET=002
+      - UMASK=002
       - WEBUI_PORT=8080
     networks:
       - traefik_proxy
@@ -403,6 +403,49 @@ services:
       - "traefik.frontend.headers.contentTypeNosniff=true"
       - "traefik.frontend.headers.forceSTSHeader=true"
       - "traefik.frontend.headers.SSLHost=qbit.${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
+      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
+      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
+      - "traefik.frontend.auth.forward.trustForwardHeader=true"
+      
+# Flood - modern web UI for various torrent clients
+# https://github.com/jesec/flood/discussions/120
+  flood:
+    image: jesec/flood
+    container_name: flood
+    hostname: flood
+    restart: always
+    user: ${PUID}:${PGID}
+    command: --port 3002 --allowedpath /data --rundir=/config
+    volumes:
+      - ${USERDIR}/docker/flood:/config
+      - ${USERDIR}/Downloads/completed:/data
+    environment:
+      - HOME=/config
+      - TZ=${TZ}
+    ports:
+      - "3002:3002"
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=flood"
+#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /flood"
+      - "traefik.frontend.rule=Host:flood.${DOMAINNAME}"
+      - "traefik.port=3002"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=flood.${DOMAINNAME}"
       - "traefik.frontend.headers.STSIncludeSubdomains=true"
       - "traefik.frontend.headers.STSPreload=true"
       - "traefik.frontend.headers.frameDeny=true"
@@ -756,7 +799,8 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
-      - UMASK_SET=022 #optional
+      - UMASK=022 #optional
+      - NVIDIA_VISIBLE_DEVICES=all
     volumes:
       - ${USERDIR}/docker/jellyfin:/config
       - /mnt/storage/media/movies:/data/movies
@@ -768,7 +812,8 @@ services:
     # - 8096:8096
     # - 8920:8920 #optional
     devices:
-      - /dev/dri:/dev/dri #optional, if you want to use your Intel GPU for hardware accelerated video encoding
+     - /dev/dri/renderD128:/dev/dri/renderD128
+     - /dev/dri/card0:/dev/dri/card0 # optional for Intel GPU hardware accelerated video encoding
      # - /dev/vchiq:/dev/vchiq #optional for raspberry pi
     networks:
       - traefik_proxy
@@ -1553,6 +1598,42 @@ services:
       - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
       - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
+# Nginx File Browser - Http File Server
+  nginx-file-browser:
+    image: mohamnag/nginx-file-browser:latest
+    container_name: nginx-file-browser
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ${USERDIR}/docker/nginx_file_browser:/opt/www/files/:ro # Location you want to index
+    networks:
+      - traefik_proxy
+#    ports:
+#      - "80:80"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=nginx-file-browser"
+      - "traefik.frontend.rule=Host:file-server.${DOMAINNAME}"
+      - "traefik.port=80"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=file-server.${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
+      #- "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
+      #- "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
+      #- "traefik.frontend.auth.forward.trustForwardHeader=true"
+
 # Duplicati - Backups cloud management
   duplicati:
     image: linuxserver/duplicati
@@ -1717,7 +1798,7 @@ services:
  
   paperless_consumer:
     image: thepaperlessproject/paperless
-    container_name: paperless_consumer
+    container_name: paperless-consumer
     restart: always
     networks:
       - traefik_proxy
@@ -1869,6 +1950,7 @@ services:
     environment:
       PORT: 3000
       AUTH_JWT_SECRET: '${AUTH_JWT_SECRET}'
+      REDIS_URL: '${REDIS_URL}'
     entrypoint: [
       "./wait-for.sh", "auth", "3000",
       "./wait-for.sh", "syncing-server-js", "3000",
@@ -2035,6 +2117,12 @@ services:
       - SF_DEFAULT_SERVER=https://notes.${DOMAINNAME}
       - SF_NEXT_VERSION_SERVER=https://notes.${DOMAINNAME}
       - DATADOG_ENABLED=false
+      - PURCHASE_URL=https://standardnotes.com/purchase
+      - PLANS_URL=https://standardnotes.com/plans
+      - DASHBOARD_URL=https://notes-web.${DOMAINNAME}/dashboard
+      - DEFAULT_SYNC_SERVER=https://notes.${DOMAINNAME}
+      - WEBSOCKET_URL=wss://sockets-dev.standardnotes.com
+      - ENABLE_UNFINISHED_FEATURES=false
     networks:
       - traefik_proxy
     labels:
@@ -2089,7 +2177,7 @@ services:
       - NET_BIND_SERVICE
     environment:
       - TZ=${TZ}
-      - ServerIP=192.168.5.36
+      - ServerIP=192.168.31.10
       - DNS1=172.28.0.3
       - DNS2=no
       - VIRTUAL_HOST=pihole.${DOMAINNAME}
@@ -2161,7 +2249,7 @@ services:
   #listen_addresses:
   #- 0.0.0.0  
   #- 0::1  
-  #- 192.168.5.1 # router ip address
+  #- 192.168.1.1 # router ip address
   #dnssec: GETDNS_EXTENSION_TRUE
   #appdata_dir: "/var/cache/stubby"
   #upstream_recursive_servers:
