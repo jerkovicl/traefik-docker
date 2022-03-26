@@ -2249,7 +2249,7 @@ services:
   #listen_addresses:
   #- 0.0.0.0  
   #- 0::1  
-  #- 192.168.1.1 # router ip address
+  #- 192.168.31.1 # router ip address
   #dnssec: GETDNS_EXTENSION_TRUE
   #appdata_dir: "/var/cache/stubby"
   #upstream_recursive_servers:
