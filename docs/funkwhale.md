@@ -18,5 +18,5 @@ docker exec -it funkwhale manage createsuperuser
 
 ```
 // For file structures similar to ./Artist/Album/Track.mp3
-docker exec -it funkwhale manage import_files $LIBRARY_ID "/music/**/**/*.mp3" --in-place --async --recursive
+docker exec -it funkwhale manage import_files $LIBRARY_ID "/music/" --in-place --async --recursive
 ```
