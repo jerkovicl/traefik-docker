@@ -1140,6 +1140,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
     environment:
       #- DB_SERVER=mariadb
+      - DB_NAME=ALL
       - DB_TYPE=mariadb
       - DB_HOST=mariadb
       - DB_USER=root
@@ -1148,7 +1149,8 @@ services:
       - DB_DUMP_BEGIN=+20
       #- DB_DUMP_TARGET=${USERDIR}/docker/mariadb/backups
       - DB_CLEANUP_TIME=8640
-      - COMPRESSION=XZ
+      - CHECKSUM=SHA1
+      - COMPRESSION=ZSTD
       - SPLIT_DB=TRUE
     networks:
       - traefik_proxy
@@ -1716,6 +1718,49 @@ services:
       - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
       - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
       - "traefik.frontend.auth.forward.trustForwardHeader=true"
+      
+# plantuml-server - server for plantuml rendering
+# debugging: docker logs --tail 50 --follow --timestamps plantuml-server
+  plantuml-server:
+    image: plantuml/plantuml-server:jetty
+    container_name: plantuml-server
+    restart: always
+    environment:
+      #- BASE_URL=plantuml
+      #- HTTP_AUTHORIZATION=null
+      #- ALLOW_PLANTUML_INCLUDE=true
+      - PLANTUML_LIMIT_SIZE=8192
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    #volumes:
+    #  - ${USERDIR}/docker/plantuml:/root
+    #ports:
+    #  - 8080:8080
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.backend=plantuml-server"
+      - "traefik.frontend.rule=Host:plantuml.${DOMAINNAME}"
+      - "traefik.port=8080"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.frontend.headers.SSLForceHost=true"
+      - "traefik.frontend.headers.SSLRedirect=true"
+      - "traefik.frontend.headers.STSSeconds=315360000"
+      - "traefik.frontend.headers.browserXSSFilter=true"
+      - "traefik.frontend.headers.contentTypeNosniff=true"
+      - "traefik.frontend.headers.forceSTSHeader=true"
+      - "traefik.frontend.headers.SSLHost=plantuml.${DOMAINNAME}"
+      - "traefik.frontend.headers.STSIncludeSubdomains=true"
+      - "traefik.frontend.headers.STSPreload=true"
+      - "traefik.frontend.headers.frameDeny=true"
+      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
+      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
+      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
+      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # fail2ban
   fail2ban:
@@ -2249,7 +2294,7 @@ services:
   #listen_addresses:
   #- 0.0.0.0  
   #- 0::1  
-  #- 192.168.31.1 # router ip address
+  #- 192.168.1.1 # router ip address
   #dnssec: GETDNS_EXTENSION_TRUE
   #appdata_dir: "/var/cache/stubby"
   #upstream_recursive_servers:
