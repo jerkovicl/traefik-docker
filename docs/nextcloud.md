@@ -64,3 +64,4 @@ exit
 ### Updating Nextcloud to new version:
 
 - you need to launch updater using webgui, because updating docker image won't update it. 
+- Alternative method via cli: `docker exec -it nextcloud updater.phar`
