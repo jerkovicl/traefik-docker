@@ -22,5 +22,5 @@ sudo recode cp1250.. ./*.srt
 - recursivly in dir
 
 ```
-sudo find . -type f -name "*.txt" -exec recode cp1250.. {} +
+sudo find . -type f -name "*.srt" -exec recode cp1250.. {} +
 ```
