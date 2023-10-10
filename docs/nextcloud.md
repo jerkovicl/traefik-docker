@@ -47,6 +47,12 @@ sudo -u abc php /config/www/nextcloud/occ db:add-missing-indices
 exit
 ```
 
+- Turn of maintenance mode
+
+```
+docker exec -it nextcloud occ maintenance:mode --off
+```
+
 ### Redis setup (optional)
 
 - If you have a Redis server you can connect to it in `$USERDIR/docker/nextcloud/www/nextcloud/config/config.php`
