@@ -21,3 +21,10 @@ dns=default
 - In case there is a problem, you can rename the file back to /etc/resolv.conf. Finally, restart your network manager using the following command `sudo service network-manager restart
 `
 - Accessing PiHole by Commandline with command: `docker exec -ti pihole /bin/bash`
+
+## Fix for bind 53 port in use
+
+```
+systemctl disable systemd-resolved.service
+systemctl stop systemd-resolved
+```  
