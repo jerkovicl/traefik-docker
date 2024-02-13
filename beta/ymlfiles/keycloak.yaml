@@ -1,0 +1,131 @@
+# Keycloak - identity and access management solution
+# http://localhost:8080/realms/{realm}/.well-known/openid-configuration
+# https://www.keycloak.org/docs/latest/server_admin/index.html#creating-the-account-remotely
+keycloak:
+  image: quay.io/keycloak/keycloak:latest
+  container_name: keycloak
+  domainname: ${DOMAINNAME}
+  restart: always
+  #    ports:
+  #      - "8080:8080"
+  command:
+    #- "-Dkeycloak.migration.action=import"
+    #- "-Dkeycloak.migration.provider=dir"
+    #- "-Dkeycloak.migration.dir=/tmp/import"
+    - "start-dev"
+  networks:
+    - traefik_proxy
+    - keycloak
+  volumes:
+    - ${USERDIR}/docker/keycloak/import:/tmp/import
+    - /etc/timezone:/etc/timezone:ro
+    - /etc/localtime:/etc/localtime:ro
+    #- /var/log/docker/keycloak:/opt/jboss/keycloak/standalone/log
+  environment:
+    - PUID=${PUID}
+    - PGID=${PGID}
+    - KC_HOSTNAME=keycloak.${DOMAINNAME}
+    - KC_HOSTNAME_PORT=8080
+    - KC_HOSTNAME_STRICT_BACKCHANNEL=true
+    - KC_HEALTH_ENABLED=true
+    - KEYCLOAK_ADMIN=${KEYCLOAK_USER}
+    - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_PASSWORD}
+    - KEYCLOAK_DATABASE_VENDOR=mariadb
+    - KC_DB_USERNAME=keycloak
+    - KC_DB_PASSWORD=${MYSQL_ROOT_PASSWORD}
+    - KC_DB_URL_HOST=mariadb
+    - KC_DB_URL_PORT=3306
+    - KC_DB_URL_DATABASE=keycloak
+    - KC_DB=mariadb
+    # This is required to run keycloak behind traefik
+    - PROXY_ADDRESS_FORWARDING=true
+  labels:
+    - "traefik.enable=true"
+    - "traefik.docker.network=traefik_proxy"
+    - "traefik.backend=keycloak"
+    - "traefik.frontend.rule=Host:keycloak.${DOMAINNAME}"
+    #      - "traefik.protocol: http"
+    - "traefik.port=8080"
+    - "traefik.frontend.passHostHeader=true"
+    - "traefik.frontend.headers.SSLForceHost=true"
+    - "traefik.frontend.headers.SSLRedirect=true"
+    - "traefik.frontend.headers.STSSeconds=315360000"
+    - "traefik.frontend.headers.browserXSSFilter=true"
+    - "traefik.frontend.headers.contentTypeNosniff=true"
+    - "traefik.frontend.headers.forceSTSHeader=true"
+    - "traefik.frontend.headers.SSLHost=keycloak.${DOMAINNAME}"
+    - "traefik.frontend.headers.STSIncludeSubdomains=true"
+    - "traefik.frontend.headers.STSPreload=true"
+    - "traefik.frontend.headers.frameDeny=true"
+    - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+    - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
+  depends_on:
+      mariadb:
+        condition: service_healthy
+
+# Keycloak - identity and access management solution
+# bitnami keycloak
+keycloak:
+  image: docker.io/bitnami/keycloak:latest
+  container_name: keycloak
+  domainname: ${DOMAINNAME}
+  restart: always
+  #    ports:
+  #      - "8080:8080"
+  networks:
+    - traefik_proxy
+    - keycloak
+  volumes:
+    - /etc/timezone:/etc/timezone:ro
+    - /etc/localtime:/etc/localtime:ro
+    #- /var/log/docker/keycloak:/opt/jboss/keycloak/standalone/log
+  # healthcheck:
+  #     test: timeout 10s bash -c ':> /dev/tcp/127.0.0.1/8080' || exit 1
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 90s
+  environment:
+    - PUID=${PUID}
+    - PGID=${PGID}
+    - KEYCLOAK_DATABASE_VENDOR=mariadb
+    - KEYCLOAK_DATABASE_HOST=mariadb
+    - KEYCLOAK_DATABASE_PORT=3306
+    - KEYCLOAK_DATABASE_NAME=keycloak
+    - KEYCLOAK_DATABASE_USER=keycloak
+    - KEYCLOAK_DATABASE_PASSWORD=${MYSQL_ROOT_PASSWORD}
+    #- KEYCLOAK_DATABASE_SCHEMA=public # need this for postgres only ??
+    - KEYCLOAK_ADMIN_USER=${KEYCLOAK_USER}
+    - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_PASSWORD}
+    - KEYCLOAK_ENABLE_HEALTH_ENDPOINTS=true
+    - KEYCLOAK_ENABLE_STATISTICS=false
+    - KC_HOSTNAME=keycloak.${DOMAINNAME}
+    # This is required to run keycloak behind traefik
+    - KC_PROXY=edge
+    - KC_PROXY_ADDRESS_FORWARDING=true
+    - KC_HTTP_ENABLED=true
+    #- KC_HOSTNAME_STRICT=false
+  labels:
+    - "traefik.enable=true"
+    - "traefik.docker.network=traefik_proxy"
+    - "traefik.backend=keycloak"
+    - "traefik.frontend.rule=Host:keycloak.${DOMAINNAME}"
+    #- "traefik.protocol: http"
+    - "traefik.port=8080"
+    - "traefik.frontend.passHostHeader=true"
+    - "traefik.frontend.headers.SSLForceHost=true"
+    - "traefik.frontend.headers.SSLRedirect=true"
+    - "traefik.frontend.headers.STSSeconds=315360000"
+    - "traefik.frontend.headers.browserXSSFilter=true"
+    - "traefik.frontend.headers.contentTypeNosniff=true"
+    - "traefik.frontend.headers.forceSTSHeader=true"
+    - "traefik.frontend.headers.SSLHost=keycloak.${DOMAINNAME}"
+    - "traefik.frontend.headers.STSIncludeSubdomains=true"
+    - "traefik.frontend.headers.STSPreload=true"
+    - "traefik.frontend.headers.frameDeny=true"
+    - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+    - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
+  depends_on:
+      mariadb:
+        condition: service_healthy
+        #restart: true
