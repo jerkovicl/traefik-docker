@@ -71,3 +71,7 @@ docker exec -it nextcloud occ maintenance:mode --off
 
 - you need to launch updater using webgui, because updating docker image won't update it. 
 - Alternative method via cli: `docker exec -it nextcloud updater.phar`
+
+### Other occ commands info
+
+- [docs](https://docs.nextcloud.com/server/stable/admin_manual/configuration_server/occ_command.html#file-operations-label)
