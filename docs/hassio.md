@@ -1,5 +1,9 @@
 # Home Assistant setup
 
+## Install location:
+
+* /usr/share/hassio/homeassistant
+
 ## Fix for Home Assistant supervisor not available error:
 
 * Pull new image:  
