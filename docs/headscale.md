@@ -1,6 +1,6 @@
+## Headscale docker setup:
 
-
-# Setup
+### First run setup
 
 You must configure an API key in order to access and manage your headscale server. 
 
@@ -11,7 +11,7 @@ You can create those using docker exec:
 docker exec headscale headscale apikeys create
 ````
 
-Afterwards, your headscale server should be managable.
+### Server Management
 
 1. Create a new user account on your headscale web interface
 2. Download the official tailscale clients and spawn up tailscale pointing to your custom headscale login server. You'll obtain a unique device key or register url.
@@ -25,7 +25,7 @@ Note: You may use preauth keys instead to skip the device registering process. R
 sudo tailscale up --login-server https://headscale.example.com
 ````
 
-# References
+### References
 
 - https://headscale.net/running-headscale-container/
 - https://github.com/juanfont/headscale
