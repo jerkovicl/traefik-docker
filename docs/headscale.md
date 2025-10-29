@@ -6,7 +6,7 @@ You must configure an API key in order to access and manage your headscale serve
 
 You can create those using docker exec:
 
-````
+````bash
 # create an api key
 docker exec -it headscale headscale apikeys create
 ````
