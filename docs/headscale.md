@@ -142,11 +142,32 @@ Update this section:
   headscale_api_key: "xRYtN-G.frqhgHAC3jqLMbBqVTTRwAs2lWxSTeHr"
 ```
 
+### Debugging and troubleshooting
+
+Headscale and Tailscale provide debug and introspection capabilities that can be helpful when things don't work as
+expected. This page explains some debugging techniques to help pinpoint problems.
+
+Please also have a look at [Tailscale's Troubleshooting guide](https://tailscale.com/kb/1023/troubleshooting). It offers
+a many tips and suggestions to troubleshoot common issues.
+
+The Tailscale client itself offers many commands to introspect its state as well as the state of the network:
+
+- [Check local network conditions](https://tailscale.com/kb/1080/cli#netcheck): `tailscale netcheck`
+- [Get the client status](https://tailscale.com/kb/1080/cli#status): `tailscale status --json`
+- [Get DNS status](https://tailscale.com/kb/1080/cli#dns): `tailscale dns status --all`
+- Client logs: `tailscale debug daemon-logs`
+- Client netmap: `tailscale debug netmap`
+- Test DERP connection: `tailscale debug derp headscale`
+- And many more, see: `tailscale debug --help`
+
 ### References
 
-- https://headscale.net/running-headscale-container/
-- https://github.com/juanfont/headscale
-- https://github.com/madaha668/self-hosting-ts/blob/main/WAN/README.md
-- https://www.lucasjanin.com/2025/01/03/headscale-tailscale-ios-installation/
-- https://headscale.net/stable/ref/debug/#tailscale
-- https://stackoverflow.com/questions/28658735/what-are-keycloaks-oauth2-openid-connect-endpoints/30449500#30449500
+- [Headscale Docs](https://headscale.net/running-headscale-container/)
+- [Headscale Github](https://github.com/juanfont/headscale)
+- [Headscale debugging](https://headscale.net/stable/ref/debug/#tailscale)
+- [Headplane Docs](https://headplane.net/configuration)
+- [Headplane Github](https://github.com/tale/headplane/)
+- [Headscale/Headplane Docker Example](https://github.com/geekau/mediastack)
+- [Headscale/Headplane Docker Example 2](https://github.com/madaha668/self-hosting-ts/blob/main/WAN/README.md)
+- [Headscale/Headplane Docker Example 3](https://www.lucasjanin.com/2025/01/03/headscale-tailscale-ios-installation/)
+- [Keycloak OIDC info](https://stackoverflow.com/questions/28658735/what-are-keycloaks-oauth2-openid-connect-endpoints/30449500#30449500)
