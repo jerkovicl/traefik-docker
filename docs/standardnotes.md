@@ -5,7 +5,7 @@
 ```
 docker exec -it mariadb mysql -uroot -p$MYSQL_ROOT_PASSWORD
 CREATE DATABASE boards CHARACTER SET = utf32 COLLATE = utf32_general_ci ;
-GRANT ALL PRIVILEGES ON standardnotes.* TO 'std_notes'@'%' IDENTIFIED BY 'BeowulfB6';
+GRANT ALL PRIVILEGES ON standardnotes.* TO 'std_notes'@'%' IDENTIFIED BY 'password';
 FLUSH PRIVILEGES;
 exit
 ```
