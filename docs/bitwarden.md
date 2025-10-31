@@ -15,4 +15,4 @@ exit
 - activate otp
 - disable signups
 - verify admin token status
-- secure admin token - https://github.com/dani-garcia/vaultwarden/wiki/Enabling-admin-page#using-vaultwarden-hash
+- secure admin token -  `docker exec -it bitwarden /vaultwarden hash` more info [here](https://github.com/dani-garcia/vaultwarden/wiki/Enabling-admin-page#using-vaultwarden-hash)
