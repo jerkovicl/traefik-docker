@@ -47,6 +47,10 @@ sudo -u abc php /config/www/nextcloud/occ db:add-missing-indices
 exit
 ```
 
+- Harp issue:
+
+More info [here](https://github.com/linuxserver/docker-nextcloud/issues/515)
+
 - Turn of maintenance mode
 
 ```
