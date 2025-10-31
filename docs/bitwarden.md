@@ -15,3 +15,4 @@ exit
 - activate otp
 - disable signups
 - verify admin token status
+- secure admin token - https://github.com/dani-garcia/vaultwarden/wiki/Enabling-admin-page#using-vaultwarden-hash
