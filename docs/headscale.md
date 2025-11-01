@@ -121,7 +121,7 @@ Headplane is a WebUI control for Headscale and is accessible at [https://headpla
 You can generate an API key to connect Headplane to Headscale with:  
 
 ``` bash
-sudo docker exec -it headscale headscale apikeys create --expiration 999d
+sudo docker exec -it headscale headscale apikeys create --reusable --expiration 999d
 ```
 
 The API Key can now be used in the Headplane portal:  
