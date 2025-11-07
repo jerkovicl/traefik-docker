@@ -83,6 +83,34 @@ ID | Hostname  | Approved                                        | Available    
 1  | exit-node | 0.0.0.0/0, 192.168.1.0/24, 172.28.10.0/24, ::/0 | 0.0.0.0/0, 192.168.1.0/24, 172.28.10.0/24, ::/0 | 192.168.1.0/24, 172.28.10.0/24, 0.0.0.0/0, ::/0
 ```
 
+### WebUI Managed with Headplane
+
+Headplane is a WebUI control for Headscale and is accessible at [https://headplane.example.com/admin/](https://headplane.example.com/admin/)    NOTE: "/" is needed at the end.  
+
+You can generate an API key to connect Headplane to Headscale with:  
+
+``` bash
+sudo docker exec -it headscale headscale apikeys create --reusable --expiration 999d
+```
+
+The API Key can now be used in the Headplane portal:  
+
+``` bash
+xRYtN-G.frqhgHAC3jqLMbBqVTTRwAs2lWxSTeHr
+```
+
+The API Key can be stored in the Headplane configuration so its always used without prompting:
+
+``` bash
+vi headplane/config.yaml
+```
+
+Update this section:  
+
+``` bash
+  headscale_api_key: "xRYtN-G.frqhgHAC3jqLMbBqVTTRwAs2lWxSTeHr"
+```
+
 ### Register Mobile Tailscale Application with Headscale
 
 You can now download the official Tailscale application, and when prompted to login, select a custom URL.  
@@ -112,35 +140,7 @@ sudo docker exec -it headscale headscale nodes list-routes
 
 You can now go to the Tailscale application on your phone, and select `Exit Node` --> `exit-node` and turn on `Allow Local Network Access`.  
 
-You can also go into the Tailscale application settings on your phone, and turn on `VPN On Demand`, so you always have remote access when away from home.  
-
-### WebUI Managed with Headplane
-
-Headplane is a WebUI control for Headscale and is accessible at [https://headplane.example.com/admin/](https://headplane.example.com/admin/)    NOTE: "/" is needed at the end.  
-
-You can generate an API key to connect Headplane to Headscale with:  
-
-``` bash
-sudo docker exec -it headscale headscale apikeys create --reusable --expiration 999d
-```
-
-The API Key can now be used in the Headplane portal:  
-
-``` bash
-xRYtN-G.frqhgHAC3jqLMbBqVTTRwAs2lWxSTeHr
-```
-
-The API Key can be stored in the Headplane configuration so its always used without prompting:
-
-``` bash
-vi headplane/config.yaml
-```
-
-Update this section:  
-
-``` bash
-  headscale_api_key: "xRYtN-G.frqhgHAC3jqLMbBqVTTRwAs2lWxSTeHr"
-```
+You can also go into the Tailscale application settings on your phone, and turn on `VPN On Demand`, so you always have remote access when away from home.
 
 ### Register MacOS application
 
