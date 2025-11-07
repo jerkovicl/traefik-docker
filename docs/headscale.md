@@ -144,7 +144,8 @@ You can also go into the Tailscale application settings on your phone, and turn 
 
 ### Register MacOS application
 
-Download and install our Standalone variant of the application directly from Tailscale's package server (recommended) [here](https://pkgs.tailscale.com/stable/#macos)
+Download and install our Standalone variant of the application directly from Tailscale's package server (recommended) [here](https://pkgs.tailscale.com/stable/#macos)  
+
 Follow tutorial [here](https://www.lucasjanin.com/2025/01/03/headscale-tailscale-macos-installation/)
 
 ### Debugging and troubleshooting
