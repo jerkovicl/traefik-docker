@@ -142,6 +142,11 @@ Update this section:
   headscale_api_key: "xRYtN-G.frqhgHAC3jqLMbBqVTTRwAs2lWxSTeHr"
 ```
 
+### Register MacOS application
+
+Download and install our Standalone variant of the application directly from Tailscale's package server (recommended) [here](https://pkgs.tailscale.com/stable/#macos)
+Follow tutorial [here](https://www.lucasjanin.com/2025/01/03/headscale-tailscale-macos-installation/)
+
 ### Debugging and troubleshooting
 
 Headscale and Tailscale provide debug and introspection capabilities that can be helpful when things don't work as
