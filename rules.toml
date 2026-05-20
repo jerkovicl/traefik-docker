@@ -1,14 +1,40 @@
-[backends]
-  [backends.backend-hassio]
-    [backends.backend-hassio.servers]
-      [backends.backend-hassio.servers.server-hassio-ext]
-        url = "http://LAN-IP:8123"
-        weight = 0
+# Traefik v3 dynamic configuration
+# Shared middlewares and external service routes
 
-[frontends]
-  [frontends.frontend-hassio]
-    backend = "backend-hassio"
-    passHostHeader = true
-    [frontends.frontend-hassio.routes]
-          [frontends.frontend-hassio.routes.route-hassio-ext]
-        rule = "Host:hassio.example.com"
+[http.middlewares]
+
+  # Security headers applied to all exposed services
+  [http.middlewares.secure-headers.headers]
+    browserXssFilter = true
+    contentTypeNosniff = true
+    forceSTSHeader = true
+    frameDeny = true
+    stsSeconds = 315360000
+    stsIncludeSubdomains = true
+    stsPreload = true
+    [http.middlewares.secure-headers.headers.customResponseHeaders]
+      X-Robots-Tag = "noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
+    customFrameOptionsValue = "allow-from https://EXAMPLE.COM"
+
+  # SSO forward-auth middleware (via traefik-forward-auth)
+  [http.middlewares.forward-auth.forwardAuth]
+    address = "http://traefik-forward-auth:4181"
+    trustForwardHeader = true
+    authResponseHeaders = ["X-Forwarded-User"]
+
+  # Combined middleware chain: forward-auth + security headers
+  [http.middlewares.secured.chain]
+    middlewares = ["forward-auth", "secure-headers"]
+
+# External (non-Docker) service routes
+[http.routers]
+  [http.routers.hassio]
+    rule = "Host(`hassio.example.com`)"
+    service = "backend-hassio"
+    entryPoints = ["https"]
+    [http.routers.hassio.tls]
+
+[http.services]
+  [http.services.backend-hassio.loadBalancer]
+    [[http.services.backend-hassio.loadBalancer.servers]]
+      url = "http://LAN-IP:8123"
