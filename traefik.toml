@@ -1,12 +1,15 @@
 # Traefik v3 static configuration
 
+[global]
+  checkNewVersion = true
+  sendAnonymousUsage = false
+
 [log]
   level = "ERROR" # DEBUG, INFO, WARN, ERROR, FATAL, PANIC
 
-# Keep the default servers transport secure.
-# If a specific backend uses a self-signed certificate, define a named
-# serversTransport for that service in dynamic configuration (for example
-# /etc/traefik/rules.toml) and reference it from that service only.
+[accessLog]
+  filePath = "/var/log/traefik/access.log"
+  format = "json"
 
 # Traefik dashboard
 [api]
@@ -14,14 +17,14 @@
 
 # Entry points
 [entryPoints]
-  [entryPoints.http]
+  [entryPoints.web]
     address = ":80"
-    [entryPoints.http.http.redirections.entryPoint]
-      to = "https"
+    [entryPoints.web.http.redirections.entryPoint]
+      to = "websecure"
       scheme = "https"
-  [entryPoints.https]
+  [entryPoints.websecure]
     address = ":443"
-    [entryPoints.https.http.tls]
+    [entryPoints.websecure.http.tls]
       certResolver = "cloudflare"
       options = "default"
   [entryPoints.monitor]

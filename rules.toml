@@ -42,7 +42,7 @@
   [http.routers.hassio]
     rule = "Host(`hassio.example.com`)"
     service = "backend-hassio"
-    entryPoints = ["https"]
+    entryPoints = ["websecure"]
     [http.routers.hassio.tls]
 
 [http.services]

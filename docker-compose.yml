@@ -28,7 +28,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.traefik.rule=Host(`traefik.${DOMAINNAME}`)"
-      - "traefik.http.routers.traefik.entrypoints=https"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
       - "traefik.http.routers.traefik.tls=true"
       - "traefik.http.routers.traefik.service=api@internal"
       - "traefik.http.routers.traefik.middlewares=secured@file"
@@ -38,6 +38,7 @@ services:
       - ${USERDIR}/docker/traefik:/etc/traefik
       - ${USERDIR}/docker/shared:/shared
       - /var/log/docker:/var/log/docker # for fail2ban - make sure to touch file before starting container
+      - ${USERDIR}/docker/traefik/logs:/var/log/traefik # access logs
 
 # The auth gate for SSO
   traefik-forward-auth:
@@ -71,7 +72,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.forward-auth.rule=Host(`auth.${DOMAINNAME}`)"
-      - "traefik.http.routers.forward-auth.entrypoints=https"
+      - "traefik.http.routers.forward-auth.entrypoints=websecure"
       - "traefik.http.routers.forward-auth.tls=true"
       - "traefik.http.routers.forward-auth.middlewares=secure-headers@file"
       - "traefik.http.services.forward-auth.loadbalancer.server.port=4181"
@@ -119,7 +120,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.keycloak.rule=Host(`keycloak.${DOMAINNAME}`)"
-      - "traefik.http.routers.keycloak.entrypoints=https"
+      - "traefik.http.routers.keycloak.entrypoints=websecure"
       - "traefik.http.routers.keycloak.tls=true"
       - "traefik.http.routers.keycloak.middlewares=secure-headers@file"
       - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
@@ -148,7 +149,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAINNAME}`)"
-      - "traefik.http.routers.portainer.entrypoints=https"
+      - "traefik.http.routers.portainer.entrypoints=websecure"
       - "traefik.http.routers.portainer.tls=true"
       - "traefik.http.routers.portainer.middlewares=secured@file"
       - "traefik.http.services.portainer.loadbalancer.server.port=9000"
@@ -173,7 +174,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.organizr.rule=Host(`organizr.${DOMAINNAME}`)"
-      - "traefik.http.routers.organizr.entrypoints=https"
+      - "traefik.http.routers.organizr.entrypoints=websecure"
       - "traefik.http.routers.organizr.tls=true"
       - "traefik.http.routers.organizr.middlewares=secured@file"
       - "traefik.http.services.organizr.loadbalancer.server.port=80"
@@ -206,7 +207,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.pma.rule=Host(`pma.${DOMAINNAME}`)"
-      - "traefik.http.routers.pma.entrypoints=https"
+      - "traefik.http.routers.pma.entrypoints=websecure"
       - "traefik.http.routers.pma.tls=true"
       - "traefik.http.routers.pma.middlewares=secured@file"
       - "traefik.http.services.pma.loadbalancer.server.port=80"
@@ -270,7 +271,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.dozzle.rule=Host(`dozzle.${DOMAINNAME}`)"
-      - "traefik.http.routers.dozzle.entrypoints=https"
+      - "traefik.http.routers.dozzle.entrypoints=websecure"
       - "traefik.http.routers.dozzle.tls=true"
       - "traefik.http.routers.dozzle.middlewares=secured@file"
       - "traefik.http.services.dozzle.loadbalancer.server.port=8080"
@@ -325,7 +326,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.qbittorrent.rule=Host(`qbit.${DOMAINNAME}`)"
-      - "traefik.http.routers.qbittorrent.entrypoints=https"
+      - "traefik.http.routers.qbittorrent.entrypoints=websecure"
       - "traefik.http.routers.qbittorrent.tls=true"
       - "traefik.http.routers.qbittorrent.middlewares=secured@file"
       - "traefik.http.services.qbittorrent.loadbalancer.server.port=8080"
@@ -353,7 +354,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.flood.rule=Host(`flood.${DOMAINNAME}`)"
-      - "traefik.http.routers.flood.entrypoints=https"
+      - "traefik.http.routers.flood.entrypoints=websecure"
       - "traefik.http.routers.flood.tls=true"
       - "traefik.http.routers.flood.middlewares=secured@file"
       - "traefik.http.services.flood.loadbalancer.server.port=3002"
@@ -380,7 +381,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.sabnzbd.rule=Host(`sabnzbd.${DOMAINNAME}`)"
-      - "traefik.http.routers.sabnzbd.entrypoints=https"
+      - "traefik.http.routers.sabnzbd.entrypoints=websecure"
       - "traefik.http.routers.sabnzbd.tls=true"
       - "traefik.http.routers.sabnzbd.middlewares=secured@file"
       - "traefik.http.services.sabnzbd.loadbalancer.server.port=8080"
@@ -410,7 +411,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.radarr.rule=Host(`radarr.${DOMAINNAME}`)"
-      - "traefik.http.routers.radarr.entrypoints=https"
+      - "traefik.http.routers.radarr.entrypoints=websecure"
       - "traefik.http.routers.radarr.tls=true"
       - "traefik.http.routers.radarr.middlewares=secured@file"
       - "traefik.http.services.radarr.loadbalancer.server.port=7878"
@@ -438,7 +439,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.sonarr.rule=Host(`sonarr.${DOMAINNAME}`)"
-      - "traefik.http.routers.sonarr.entrypoints=https"
+      - "traefik.http.routers.sonarr.entrypoints=websecure"
       - "traefik.http.routers.sonarr.tls=true"
       - "traefik.http.routers.sonarr.middlewares=secured@file"
       - "traefik.http.services.sonarr.loadbalancer.server.port=8989"
@@ -467,7 +468,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.lidarr.rule=Host(`lidarr.${DOMAINNAME}`)"
-      - "traefik.http.routers.lidarr.entrypoints=https"
+      - "traefik.http.routers.lidarr.entrypoints=websecure"
       - "traefik.http.routers.lidarr.tls=true"
       - "traefik.http.routers.lidarr.middlewares=secured@file"
       - "traefik.http.services.lidarr.loadbalancer.server.port=8686"
@@ -495,7 +496,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.bazarr.rule=Host(`bazarr.${DOMAINNAME}`)"
-      - "traefik.http.routers.bazarr.entrypoints=https"
+      - "traefik.http.routers.bazarr.entrypoints=websecure"
       - "traefik.http.routers.bazarr.tls=true"
       - "traefik.http.routers.bazarr.middlewares=secured@file"
       - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
@@ -555,7 +556,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.lazylibrarian.rule=Host(`lazylibrarian.${DOMAINNAME}`)"
-      - "traefik.http.routers.lazylibrarian.entrypoints=https"
+      - "traefik.http.routers.lazylibrarian.entrypoints=websecure"
       - "traefik.http.routers.lazylibrarian.tls=true"
       - "traefik.http.routers.lazylibrarian.middlewares=secured@file"
       - "traefik.http.services.lazylibrarian.loadbalancer.server.port=5299"
@@ -600,7 +601,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.plexms.rule=Host(`plex.${DOMAINNAME}`)"
-      - "traefik.http.routers.plexms.entrypoints=https"
+      - "traefik.http.routers.plexms.entrypoints=websecure"
       - "traefik.http.routers.plexms.tls=true"
       - "traefik.http.routers.plexms.middlewares=secured@file"
       - "traefik.http.services.plexms.loadbalancer.server.port=32400"
@@ -637,7 +638,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.jellyfin.rule=Host(`jellyfin.${DOMAINNAME}`)"
-      - "traefik.http.routers.jellyfin.entrypoints=https"
+      - "traefik.http.routers.jellyfin.entrypoints=websecure"
       - "traefik.http.routers.jellyfin.tls=true"
       - "traefik.http.routers.jellyfin.middlewares=secure-headers@file"
       - "traefik.http.services.jellyfin.loadbalancer.server.port=8096"
@@ -662,7 +663,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.funkwhale.rule=Host(`funkwhale.${DOMAINNAME}`)"
-      - "traefik.http.routers.funkwhale.entrypoints=https"
+      - "traefik.http.routers.funkwhale.entrypoints=websecure"
       - "traefik.http.routers.funkwhale.tls=true"
       - "traefik.http.routers.funkwhale.middlewares=secured@file"
       - "traefik.http.services.funkwhale.loadbalancer.server.port=80"
@@ -690,7 +691,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.picard.rule=Host(`picard.${DOMAINNAME}`)"
-      - "traefik.http.routers.picard.entrypoints=https"
+      - "traefik.http.routers.picard.entrypoints=websecure"
       - "traefik.http.routers.picard.tls=true"
       - "traefik.http.routers.picard.middlewares=secured@file"
       - "traefik.http.services.picard.loadbalancer.server.port=5800"
@@ -719,12 +720,12 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.ubooquity.rule=Host(`ubooquity.${DOMAINNAME}`)"
-      - "traefik.http.routers.ubooquity.entrypoints=https"
+      - "traefik.http.routers.ubooquity.entrypoints=websecure"
       - "traefik.http.routers.ubooquity.tls=true"
       - "traefik.http.routers.ubooquity.middlewares=secured@file"
       - "traefik.http.services.ubooquity.loadbalancer.server.port=2202"
       - "traefik.http.routers.ubooquity-admin.rule=Host(`ubooquity.${DOMAINNAME}`) && PathPrefix(`/admin`, `/admin-res`, `/admin-api`)"
-      - "traefik.http.routers.ubooquity-admin.entrypoints=https"
+      - "traefik.http.routers.ubooquity-admin.entrypoints=websecure"
       - "traefik.http.routers.ubooquity-admin.tls=true"
       - "traefik.http.routers.ubooquity-admin.middlewares=secured@file"
       - "traefik.http.services.ubooquity-admin.loadbalancer.server.port=2203"
@@ -752,7 +753,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.calibre-web.rule=Host(`calibre-web.${DOMAINNAME}`)"
-      - "traefik.http.routers.calibre-web.entrypoints=https"
+      - "traefik.http.routers.calibre-web.entrypoints=websecure"
       - "traefik.http.routers.calibre-web.tls=true"
       - "traefik.http.routers.calibre-web.middlewares=secured@file"
       - "traefik.http.services.calibre-web.loadbalancer.server.port=8083"
@@ -781,7 +782,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.calibre.rule=Host(`calibre.${DOMAINNAME}`)"
-      - "traefik.http.routers.calibre.entrypoints=https"
+      - "traefik.http.routers.calibre.entrypoints=websecure"
       - "traefik.http.routers.calibre.tls=true"
       - "traefik.http.routers.calibre.middlewares=secured@file"
       - "traefik.http.services.calibre.loadbalancer.server.port=8080"
@@ -833,7 +834,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.audiobookshelf.rule=Host(`audiobookshelf.${DOMAINNAME}`)"
-      - "traefik.http.routers.audiobookshelf.entrypoints=https"
+      - "traefik.http.routers.audiobookshelf.entrypoints=websecure"
       - "traefik.http.routers.audiobookshelf.tls=true"
       - "traefik.http.routers.audiobookshelf.middlewares=secured@file"
       - "traefik.http.services.audiobookshelf.loadbalancer.server.port=80"
@@ -862,7 +863,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.jackett.rule=Host(`jackett.${DOMAINNAME}`)"
-      - "traefik.http.routers.jackett.entrypoints=https"
+      - "traefik.http.routers.jackett.entrypoints=websecure"
       - "traefik.http.routers.jackett.tls=true"
       - "traefik.http.routers.jackett.middlewares=secured@file"
       - "traefik.http.services.jackett.loadbalancer.server.port=9117"
@@ -984,7 +985,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.rediscommander.rule=Host(`rediscmd.${DOMAINNAME}`)"
-      - "traefik.http.routers.rediscommander.entrypoints=https"
+      - "traefik.http.routers.rediscommander.entrypoints=websecure"
       - "traefik.http.routers.rediscommander.tls=true"
       - "traefik.http.routers.rediscommander.middlewares=secured@file"
       - "traefik.http.services.rediscommander.loadbalancer.server.port=8081"
@@ -1002,7 +1003,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.cyberchef.rule=Host(`cyberchef.${DOMAINNAME}`)"
-      - "traefik.http.routers.cyberchef.entrypoints=https"
+      - "traefik.http.routers.cyberchef.entrypoints=websecure"
       - "traefik.http.routers.cyberchef.tls=true"
       - "traefik.http.routers.cyberchef.middlewares=secured@file"
       - "traefik.http.services.cyberchef.loadbalancer.server.port=8000"
@@ -1027,7 +1028,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAINNAME}`)"
-      - "traefik.http.routers.nextcloud.entrypoints=https"
+      - "traefik.http.routers.nextcloud.entrypoints=websecure"
       - "traefik.http.routers.nextcloud.tls=true"
       - "traefik.http.routers.nextcloud.middlewares=secure-headers@file"
       - "traefik.http.services.nextcloud.loadbalancer.server.port=443"
@@ -1065,7 +1066,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.bitwarden.rule=Host(`bitwarden.${DOMAINNAME}`)"
-      - "traefik.http.routers.bitwarden.entrypoints=https"
+      - "traefik.http.routers.bitwarden.entrypoints=websecure"
       - "traefik.http.routers.bitwarden.tls=true"
       - "traefik.http.routers.bitwarden.middlewares=secure-headers@file"
       - "traefik.http.services.bitwarden.loadbalancer.server.port=80"
@@ -1114,7 +1115,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.guacamole.rule=Host(`guac.${DOMAINNAME}`)"
-      - "traefik.http.routers.guacamole.entrypoints=https"
+      - "traefik.http.routers.guacamole.entrypoints=websecure"
       - "traefik.http.routers.guacamole.tls=true"
       - "traefik.http.routers.guacamole.middlewares=secured@file"
       - "traefik.http.services.guacamole.loadbalancer.server.port=8080"
@@ -1150,7 +1151,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.netdata.rule=Host(`netdata.${DOMAINNAME}`)"
-      - "traefik.http.routers.netdata.entrypoints=https"
+      - "traefik.http.routers.netdata.entrypoints=websecure"
       - "traefik.http.routers.netdata.tls=true"
       - "traefik.http.routers.netdata.middlewares=secured@file"
       - "traefik.http.services.netdata.loadbalancer.server.port=19999"
@@ -1176,7 +1177,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.glances.rule=Host(`glances.${DOMAINNAME}`)"
-      - "traefik.http.routers.glances.entrypoints=https"
+      - "traefik.http.routers.glances.entrypoints=websecure"
       - "traefik.http.routers.glances.tls=true"
       - "traefik.http.routers.glances.middlewares=secured@file"
       - "traefik.http.services.glances.loadbalancer.server.port=61208"
@@ -1196,7 +1197,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.heimdall.rule=Host(`${DOMAINNAME}`, `www.${DOMAINNAME}`, `heimdall.${DOMAINNAME}`)"
-      - "traefik.http.routers.heimdall.entrypoints=https"
+      - "traefik.http.routers.heimdall.entrypoints=websecure"
       - "traefik.http.routers.heimdall.tls=true"
       - "traefik.http.routers.heimdall.middlewares=secured@file"
       - "traefik.http.services.heimdall.loadbalancer.server.port=80"
@@ -1256,7 +1257,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.cloudcmd.rule=Host(`cloudcmd.${DOMAINNAME}`)"
-      - "traefik.http.routers.cloudcmd.entrypoints=https"
+      - "traefik.http.routers.cloudcmd.entrypoints=websecure"
       - "traefik.http.routers.cloudcmd.tls=true"
       - "traefik.http.routers.cloudcmd.middlewares=secured@file"
       - "traefik.http.services.cloudcmd.loadbalancer.server.port=8000"
@@ -1278,7 +1279,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.nginx-file-browser.rule=Host(`file-server.${DOMAINNAME}`)"
-      - "traefik.http.routers.nginx-file-browser.entrypoints=https"
+      - "traefik.http.routers.nginx-file-browser.entrypoints=websecure"
       - "traefik.http.routers.nginx-file-browser.tls=true"
       - "traefik.http.routers.nginx-file-browser.middlewares=secure-headers@file"
       - "traefik.http.services.nginx-file-browser.loadbalancer.server.port=80"
@@ -1308,7 +1309,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAINNAME}`)"
-      - "traefik.http.routers.duplicati.entrypoints=https"
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
       - "traefik.http.routers.duplicati.tls=true"
       - "traefik.http.routers.duplicati.middlewares=secured@file"
       - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
@@ -1337,7 +1338,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.code-server.rule=Host(`code.${DOMAINNAME}`)"
-      - "traefik.http.routers.code-server.entrypoints=https"
+      - "traefik.http.routers.code-server.entrypoints=websecure"
       - "traefik.http.routers.code-server.tls=true"
       - "traefik.http.routers.code-server.middlewares=secured@file"
       - "traefik.http.services.code-server.loadbalancer.server.port=8443"
@@ -1366,7 +1367,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.plantuml-server.rule=Host(`plantuml.${DOMAINNAME}`)"
-      - "traefik.http.routers.plantuml-server.entrypoints=https"
+      - "traefik.http.routers.plantuml-server.entrypoints=websecure"
       - "traefik.http.routers.plantuml-server.tls=true"
       - "traefik.http.routers.plantuml-server.middlewares=secured@file"
       - "traefik.http.services.plantuml-server.loadbalancer.server.port=8080"
@@ -1490,7 +1491,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.swagger-editor.rule=Host(`swagger.${DOMAINNAME}`)"
-      - "traefik.http.routers.swagger-editor.entrypoints=https"
+      - "traefik.http.routers.swagger-editor.entrypoints=websecure"
       - "traefik.http.routers.swagger-editor.tls=true"
       - "traefik.http.routers.swagger-editor.middlewares=secured@file"
       - "traefik.http.services.swagger-editor.loadbalancer.server.port=8080"
@@ -1512,7 +1513,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.jsonhero-editor.rule=Host(`jsonh.${DOMAINNAME}`)"
-      - "traefik.http.routers.jsonhero-editor.entrypoints=https"
+      - "traefik.http.routers.jsonhero-editor.entrypoints=websecure"
       - "traefik.http.routers.jsonhero-editor.tls=true"
       - "traefik.http.routers.jsonhero-editor.middlewares=secured@file"
       - "traefik.http.services.jsonhero-editor.loadbalancer.server.port=8787"
@@ -1539,7 +1540,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.focalboard.rule=Host(`focalboard.${DOMAINNAME}`)"
-      - "traefik.http.routers.focalboard.entrypoints=https"
+      - "traefik.http.routers.focalboard.entrypoints=websecure"
       - "traefik.http.routers.focalboard.tls=true"
       - "traefik.http.routers.focalboard.middlewares=secured@file"
       - "traefik.http.services.focalboard.loadbalancer.server.port=8000"
@@ -1619,7 +1620,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.api-gateway.rule=Host(`notes.${DOMAINNAME}`)"
-      - "traefik.http.routers.api-gateway.entrypoints=https"
+      - "traefik.http.routers.api-gateway.entrypoints=websecure"
       - "traefik.http.routers.api-gateway.tls=true"
       - "traefik.http.routers.api-gateway.middlewares=secure-headers@file"
       - "traefik.http.services.api-gateway.loadbalancer.server.port=3000"
@@ -1721,7 +1722,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.snext.rule=Host(`notes-ext.${DOMAINNAME}`)"
-      - "traefik.http.routers.snext.entrypoints=https"
+      - "traefik.http.routers.snext.entrypoints=websecure"
       - "traefik.http.routers.snext.tls=true"
       - "traefik.http.routers.snext.middlewares=secure-headers@file"
       - "traefik.http.services.snext.loadbalancer.server.port=80"
@@ -1766,7 +1767,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.snweb.rule=Host(`notes-web.${DOMAINNAME}`)"
-      - "traefik.http.routers.snweb.entrypoints=https"
+      - "traefik.http.routers.snweb.entrypoints=websecure"
       - "traefik.http.routers.snweb.tls=true"
       - "traefik.http.routers.snweb.middlewares=secure-headers@file"
       - "traefik.http.services.snweb.loadbalancer.server.port=3001"
@@ -1838,7 +1839,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.pihole.rule=Host(`pihole.${DOMAINNAME}`)"
-      - "traefik.http.routers.pihole.entrypoints=https"
+      - "traefik.http.routers.pihole.entrypoints=websecure"
       - "traefik.http.routers.pihole.tls=true"
       - "traefik.http.routers.pihole.middlewares=secured@file"
       - "traefik.http.services.pihole.loadbalancer.server.port=80"
@@ -1990,7 +1991,7 @@ services:
       - "me.tale.headplane.target=headscale"
       - "traefik.enable=true"
       - "traefik.http.routers.headscale.rule=Host(`headscale.${DOMAINNAME}`)"
-      - "traefik.http.routers.headscale.entrypoints=https"
+      - "traefik.http.routers.headscale.entrypoints=websecure"
       - "traefik.http.routers.headscale.tls=true"
       - "traefik.http.routers.headscale.middlewares=secure-headers@file"
       - "traefik.http.services.headscale.loadbalancer.server.port=8080"
@@ -2044,7 +2045,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.headplane.rule=Host(`headplane.${DOMAINNAME}`) && PathPrefix(`/admin/`)"
-      - "traefik.http.routers.headplane.entrypoints=https"
+      - "traefik.http.routers.headplane.entrypoints=websecure"
       - "traefik.http.routers.headplane.tls=true"
       - "traefik.http.routers.headplane.middlewares=secured@file"
       - "traefik.http.services.headplane.loadbalancer.server.port=3000"
