@@ -13,7 +13,7 @@
     stsPreload = true
     [http.middlewares.secure-headers.headers.customResponseHeaders]
       X-Robots-Tag = "noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      Content-Security-Policy = "frame-ancestors 'self' https://EXAMPLE.COM"
+      Content-Security-Policy = "frame-ancestors 'self' https://example.com"
 
   # SSO forward-auth middleware (via traefik-forward-auth)
   [http.middlewares.forward-auth.forwardAuth]
