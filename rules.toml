@@ -8,13 +8,12 @@
     browserXssFilter = true
     contentTypeNosniff = true
     forceSTSHeader = true
-    frameDeny = true
-    stsSeconds = 315360000
+    stsSeconds = 63072000
     stsIncludeSubdomains = true
     stsPreload = true
     [http.middlewares.secure-headers.headers.customResponseHeaders]
       X-Robots-Tag = "noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-    customFrameOptionsValue = "allow-from https://EXAMPLE.COM"
+      Content-Security-Policy = "frame-ancestors 'self' https://EXAMPLE.COM"
 
   # SSO forward-auth middleware (via traefik-forward-auth)
   [http.middlewares.forward-auth.forwardAuth]
