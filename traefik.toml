@@ -46,4 +46,7 @@
   [certificatesResolvers.cloudflare.acme.dnsChallenge]
     provider = "cloudflare"
     delayBeforeCheck = 300
+  [[certificatesResolvers.cloudflare.acme.domains]]
+    main = "example.com"
+    sans = ["*.example.com"]
 
