@@ -3,10 +3,11 @@
 [log]
   level = "ERROR" # DEBUG, INFO, WARN, ERROR, FATAL, PANIC
 
-# Keep the default servers transport secure.
-# If a specific backend uses a self-signed certificate, define a named
-# serversTransport for that service in dynamic configuration (for example
-# /etc/traefik/rules.toml) and reference it from that service only.
+# Preserve the previous backend TLS behavior from v1.
+# This keeps Traefik from failing verification against self-signed or
+# otherwise untrusted upstream HTTPS certificates.
+[serversTransport]
+  insecureSkipVerify = true
 
 # Traefik dashboard
 [api]
