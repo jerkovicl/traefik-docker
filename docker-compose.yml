@@ -1033,6 +1033,8 @@ services:
       - "traefik.http.routers.nextcloud.middlewares=secure-headers@file"
       - "traefik.http.services.nextcloud.loadbalancer.server.port=443"
       - "traefik.http.services.nextcloud.loadbalancer.server.scheme=https"
+      - "traefik.http.services.nextcloud.loadbalancer.serverstransport=nextcloud-insecuretransport"
+      - "traefik.http.serverstransports.nextcloud-insecuretransport.insecureskipverify=true"
       - "traefik.docker.network=traefik_proxy"
 
 # Bitwarden - Password Vault
