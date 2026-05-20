@@ -1832,6 +1832,7 @@ services:
     networks:
       skynet:
         ipv4_address: 172.28.0.2
+      traefik_proxy:
     ports:
       - '53:53/tcp'
       - '53:53/udp'
