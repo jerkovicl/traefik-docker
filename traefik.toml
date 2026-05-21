@@ -11,12 +11,6 @@
   filePath = "/var/log/traefik/access.log"
   format = "json"
 
-# Preserve the previous backend TLS behavior from v1.
-# This keeps Traefik from failing verification against self-signed or
-# otherwise untrusted upstream HTTPS certificates.
-[serversTransport]
-  insecureSkipVerify = true
-
 # Traefik dashboard
 [api]
   dashboard = true
