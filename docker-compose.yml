@@ -1018,6 +1018,11 @@ services:
       - ${USERDIR}/docker/nextcloud:/config
       - ${USERDIR}/shared_data:/data
       - ${USERDIR}/docker/shared:/shared
+      # Mount LE wildcard cert (dumped by certsdump from acme.json) so nginx inside
+      # Nextcloud uses a publicly trusted cert — allows Traefik to verify it without
+      # insecureSkipVerify. Adjust the domain subdir to match your DOMAINNAME.
+      - ${USERDIR}/docker/shared/letsencrypt/etc/live/${DOMAINNAME}/fullchain.pem:/config/keys/cert.crt:ro
+      - ${USERDIR}/docker/shared/letsencrypt/etc/live/${DOMAINNAME}/privkey.pem:/config/keys/cert.key:ro
 #    ports:
 #      - "XXXX:443"
     environment:
@@ -1033,8 +1038,6 @@ services:
       - "traefik.http.routers.nextcloud.middlewares=secure-headers@file"
       - "traefik.http.services.nextcloud.loadbalancer.server.port=443"
       - "traefik.http.services.nextcloud.loadbalancer.server.scheme=https"
-      - "traefik.http.services.nextcloud.loadbalancer.serverstransport=nextcloud-insecuretransport"
-      - "traefik.http.serverstransports.nextcloud-insecuretransport.insecureskipverify=true"
       - "traefik.docker.network=traefik_proxy"
 
 # Bitwarden - Password Vault
