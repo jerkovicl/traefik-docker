@@ -1058,7 +1058,7 @@ services:
       - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAINNAME}`)"
       - "traefik.http.routers.nextcloud.entrypoints=websecure"
       - "traefik.http.routers.nextcloud.tls=true"
-      - "traefik.http.routers.nextcloud.middlewares=secure-headers@file"
+      - "traefik.http.routers.nextcloud.middlewares=nextcloud-headers@file,nextcloud-redirect@file"
       - "traefik.http.services.nextcloud.loadbalancer.server.port=443"
       - "traefik.http.services.nextcloud.loadbalancer.server.scheme=https"
       - "traefik.docker.network=traefik_proxy"

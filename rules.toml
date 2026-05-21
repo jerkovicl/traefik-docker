@@ -11,9 +11,40 @@
     stsSeconds = 63072000
     stsIncludeSubdomains = true
     stsPreload = true
+    referrerPolicy = "same-origin"
+    permissionsPolicy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    hostsProxyHeaders = ["X-Forwarded-Host"]
     [http.middlewares.secure-headers.headers.customResponseHeaders]
       X-Robots-Tag = "noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
       Content-Security-Policy = "frame-ancestors 'self' https://example.com"
+      server = ""
+    [http.middlewares.secure-headers.headers.customRequestHeaders]
+      X-Forwarded-Proto = "https"
+
+  # Rate limiting — applied in all chains to prevent abuse
+  [http.middlewares.rate-limit.rateLimit]
+    average = 200
+    burst = 200
+
+  # Nextcloud-specific security headers (relaxed CSP, no strict frame policy)
+  [http.middlewares.nextcloud-headers.headers]
+    browserXssFilter = true
+    contentTypeNosniff = true
+    forceSTSHeader = true
+    stsSeconds = 63072000
+    stsIncludeSubdomains = true
+    stsPreload = true
+    referrerPolicy = "no-referrer"
+    customFrameOptionsValue = "SAMEORIGIN"
+    [http.middlewares.nextcloud-headers.headers.customResponseHeaders]
+      X-Robots-Tag = "noindex,nofollow"
+      server = ""
+
+  # Redirect Nextcloud CalDAV/CardDAV .well-known discovery URLs
+  [http.middlewares.nextcloud-redirect.redirectRegex]
+    permanent = true
+    regex = "https://(.*)/.well-known/(card|cal)dav"
+    replacement = "https://${1}/remote.php/dav/"
 
   # SSO forward-auth middleware (via traefik-forward-auth)
   [http.middlewares.forward-auth.forwardAuth]
@@ -21,23 +52,28 @@
     trustForwardHeader = true
     authResponseHeaders = ["X-Forwarded-User"]
 
-  # Combined middleware chain: forward-auth + security headers
+  # Combined middleware chain: forward-auth + rate-limit + security headers
   [http.middlewares.secured.chain]
-    middlewares = ["forward-auth", "secure-headers"]
+    middlewares = ["rate-limit", "forward-auth", "secure-headers"]
 
 # Global TLS options (dynamic config — must NOT be in traefik.toml)
 # Only GCM ciphers retained — CBC variants removed (weaker, not used by TLS 1.3)
 [tls.options.default]
   minVersion = "VersionTLS12"
+  sniStrict = true
   cipherSuites = [
-    "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
     "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
-    "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+    "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
     "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+    "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+    "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305",
+    "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305",
     "TLS_AES_128_GCM_SHA256",
     "TLS_AES_256_GCM_SHA384",
-    "TLS_CHACHA20_POLY1305_SHA256"
+    "TLS_CHACHA20_POLY1305_SHA256",
+    "TLS_FALLBACK_SCSV"
   ]
+  curvePreferences = ["CurveP521", "CurveP384"]
 
 # External (non-Docker) service routes
 [http.routers]
