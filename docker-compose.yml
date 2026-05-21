@@ -1144,15 +1144,16 @@ services:
       - PGID=${PGID}
       - TZ=${TZ}
     healthcheck:
-      # Uses local socket auth (no password exposed in docker inspect)
-      # mariadb-admin is available via mariadb-server-utils package in linuxserver/mariadb
+      # CMD-SHELL lets the container shell expand $MYSQL_ROOT_PASSWORD at runtime
+      # $$ in compose YAML becomes $ after compose processing — password never hardcoded
       # NOTE: healthcheck.sh does NOT exist in linuxserver/mariadb (Alpine-based, not official MariaDB image)
-      test: ["CMD", "mariadb-admin", "-uroot", "--local", "version"]
+      # --local (unix_socket auth) would only work if root@localhost is granted unix_socket — not guaranteed when MYSQL_ROOT_PASSWORD is set
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD"]
       start_period: 30s
       interval: 30s
       timeout: 10s
       retries: 5
-      # Old healthcheck (password exposed in docker inspect, excessive retries):
+      # Old healthcheck (password interpolated by compose at parse time, exposed in docker inspect):
       # test: mariadb-admin ping -h 127.0.0.1 --password=$MYSQL_ROOT_PASSWORD
       # start_period: 20s / start_interval: 1s / interval: 30s / timeout: 5s / retries: 30
       
