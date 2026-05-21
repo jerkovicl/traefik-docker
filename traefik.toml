@@ -88,10 +88,15 @@
 # Let's Encrypt / ACME via Cloudflare DNS challenge
 [certificatesResolvers.cloudflare.acme]
   email = "email@domain.com" # any email id will work
+  # caServer = "https://acme-staging-v02.api.letsencrypt.org/directory" # Uncomment for testing to avoid LE rate limits
   storage = "/etc/traefik/acme/acme.json"
   [certificatesResolvers.cloudflare.acme.dnsChallenge]
     provider = "cloudflare"
-    delayBeforeCheck = 300
+    # Use Cloudflare's own resolvers to avoid delays waiting for DNS propagation
+    resolvers = ["1.1.1.1:53", "1.0.0.1:53"]
+  [certificatesResolvers.cloudflare.acme.dnsChallenge.propagation]
+    # Wait 120s before checking DNS propagation (reduces LE API rate-limit hits)
+    delayBeforeChecks = 120
   [[certificatesResolvers.cloudflare.acme.domains]]
     main = "example.com"
     sans = ["*.example.com"]
