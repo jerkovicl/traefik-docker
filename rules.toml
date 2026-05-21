@@ -67,17 +67,44 @@
       "X-authentik-meta-version"
     ]
 
-  # No-auth chain: rate-limit + security headers only (used by bypass routers for mobile app access)
-  [http.middlewares.chain-no-auth.chain]
-    middlewares = ["rate-limit", "secure-headers"]
+  # Geoblock: allow traffic only from specified countries + private IP ranges
+  # DB file: download from https://github.com/nscuro/traefik-plugin-geoblock/releases/download/v0.14.0/IP2LOCATION-LITE-DB1.IPV6.BIN
+  # Place at: ~/docker/traefik/plugins/IP2LOCATION-LITE-DB1.IPV6.BIN
+  # Add countries you access from (ISO 3166-1 alpha-2 codes)
+  [http.middlewares.middlewares-geoblock.plugin.geoblock]
+    enabled = true
+    databaseFilePath = "/plugins-local/IP2LOCATION-LITE-DB1.IPV6.BIN"
+    allowedCountries = ["HR", "ES"]
+    blockedCountries = []
+    defaultAllow = false
+    allowPrivate = true
+    disallowedStatusCode = 403
+    allowedIPBlocks = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
 
-  # Authentik middleware chain: rate-limit + security headers + authentik SSO
+  # Fail2Ban: ban IPs with 4+ failed requests in 10 min for 3 hours
+  # Whitelists local network ranges so LAN devices are never banned
+  [http.middlewares.middlewares-fail2ban.plugin.fail2ban.rules]
+    enabled = true
+    urlregexp = ""
+    bantime = "3h"
+    findtime = "10m"
+    maxretry = 4
+    statuscode = "400-499"
+  [http.middlewares.middlewares-fail2ban.plugin.fail2ban.whitelist]
+    files = []
+    ip = ["127.0.0.1/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+
+  # No-auth chain: fail2ban + geoblock + rate-limit + security headers (used by bypass routers for mobile app access)
+  [http.middlewares.chain-no-auth.chain]
+    middlewares = ["middlewares-fail2ban", "middlewares-geoblock", "rate-limit", "secure-headers"]
+
+  # Authentik middleware chain: fail2ban + geoblock + rate-limit + security headers + authentik SSO
   [http.middlewares.chain-authentik.chain]
-    middlewares = ["rate-limit", "secure-headers", "middlewares-authentik"]
+    middlewares = ["middlewares-fail2ban", "middlewares-geoblock", "rate-limit", "secure-headers", "middlewares-authentik"]
 
   # Combined middleware chain (alias for chain-authentik — used by services via secured@file label)
   [http.middlewares.secured.chain]
-    middlewares = ["rate-limit", "secure-headers", "middlewares-authentik"]
+    middlewares = ["middlewares-fail2ban", "middlewares-geoblock", "rate-limit", "secure-headers", "middlewares-authentik"]
 
 # Global TLS options (dynamic config — must NOT be in traefik.toml)
 # Only GCM ciphers retained — CBC variants removed (weaker, not used by TLS 1.3)

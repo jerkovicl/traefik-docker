@@ -128,6 +128,13 @@ services:
       - "--certificatesresolvers.cloudflare.acme.dnschallenge.propagation.delaybeforechecks=120"
       - "--certificatesresolvers.cloudflare.acme.domains[0].main=${DOMAINNAME}"
       - "--certificatesresolvers.cloudflare.acme.domains[0].sans=*.${DOMAINNAME}"
+      ## Plugins — loaded at startup; requires full container restart (not just up -d) when changed
+      # Geoblock: block traffic from countries not in allowedCountries list (rules.toml)
+      - "--experimental.plugins.geoblock.modulename=github.com/nscuro/traefik-plugin-geoblock"
+      - "--experimental.plugins.geoblock.version=v0.14.0"
+      # Fail2Ban: ban IPs with repeated 4xx errors (rules.toml)
+      - "--experimental.plugins.fail2ban.modulename=github.com/tomMoulard/fail2ban"
+      - "--experimental.plugins.fail2ban.version=v0.8.2"
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 30s
@@ -165,6 +172,7 @@ services:
       - ${USERDIR}/docker/shared:/shared
       - /var/log/docker:/var/log/docker # for fail2ban - make sure to touch file before starting container
       - ${USERDIR}/docker/traefik/logs:/var/log/traefik # access logs
+      - ${USERDIR}/docker/traefik/plugins:/plugins-local # Geoblock IP2Location database
     depends_on:
       socket-proxy:
         condition: service_started
