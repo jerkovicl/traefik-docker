@@ -56,6 +56,72 @@ services:
       - no-new-privileges:true
     restart: always
     domainname: ${DOMAINNAME}
+    # Static config via CLI args — replaces traefik.toml (traefik.toml kept as reference only).
+    # Benefit: env vars can be expanded at runtime using {{env "VAR"}} syntax (e.g. ACME email).
+    # Entrypoint architecture:
+    #   web          :80  → redirects to websecure  (LAN only)
+    #   web-external :81  → redirects to websecure-external (internet)
+    #   websecure    :443 → LAN-only HTTPS (router does NOT forward external :443 here)
+    #   websecure-external :444 → external HTTPS (router: internet :443 → Traefik :444)
+    #   monitor      :8081 → healthcheck/ping
+    command:
+      ## Global
+      - "--global.checkNewVersion=true"
+      - "--global.sendAnonymousUsage=false"
+      ## Logging
+      - "--log.level=ERROR"
+      - "--accesslog=true"
+      - "--accesslog.filepath=/var/log/traefik/access.log"
+      - "--accesslog.format=json"
+      - "--accesslog.bufferingsize=100"
+      - "--accesslog.filters.statuscodes=204-299,400-499,500-599"
+      - "--accesslog.filters.retryattempts=true"
+      - "--accesslog.filters.minduration=10ms"
+      ## API / Dashboard
+      - "--api.dashboard=true"
+      - "--api.insecure=false"
+      ## Ping / healthcheck (monitor entrypoint)
+      - "--ping=true"
+      - "--ping.entrypoint=monitor"
+      ## Entrypoints — internal LAN (:80 → :443)
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web.forwardedheaders.trustedips=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,127.0.0.1/32,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.http.tls.certresolver=cloudflare"
+      - "--entrypoints.websecure.http.tls.options=default"
+      - "--entrypoints.websecure.forwardedheaders.trustedips=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,127.0.0.1/32,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
+      ## Entrypoints — external/internet (:81 → :444); router maps internet :443 → Traefik :444
+      - "--entrypoints.web-external.address=:81"
+      - "--entrypoints.web-external.http.redirections.entrypoint.to=websecure-external"
+      - "--entrypoints.web-external.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web-external.forwardedheaders.trustedips=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,127.0.0.1/32,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
+      - "--entrypoints.websecure-external.address=:444"
+      - "--entrypoints.websecure-external.http.tls.certresolver=cloudflare"
+      - "--entrypoints.websecure-external.http.tls.options=default"
+      - "--entrypoints.websecure-external.forwardedheaders.trustedips=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,127.0.0.1/32,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
+      ## Monitor entrypoint for healthchecks
+      - "--entrypoints.monitor.address=:8081"
+      ## Providers
+      - "--providers.providersthrottleduration=2s"
+      - "--providers.file.watch=true"
+      - "--providers.file.filename=/etc/traefik/rules.toml"
+      - "--providers.docker.endpoint=tcp://socket-proxy:2375"
+      - "--providers.docker.network=traefik_proxy"
+      - "--providers.docker.watch=true"
+      - "--providers.docker.exposedbydefault=false"
+      ## ACME / Let's Encrypt via Cloudflare DNS challenge
+      ## {{env "CF_API_EMAIL"}} is resolved at runtime from the container env var below
+      - "--certificatesresolvers.cloudflare.acme.email={{env \"CF_API_EMAIL\"}}"
+      - "--certificatesresolvers.cloudflare.acme.storage=/etc/traefik/acme/acme.json"
+      # Uncomment to test against staging CA (avoids LE rate limits):
+      # - "--certificatesresolvers.cloudflare.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
+      - "--certificatesresolvers.cloudflare.acme.dnschallenge.provider=cloudflare"
+      - "--certificatesresolvers.cloudflare.acme.dnschallenge.resolvers=1.1.1.1:53,1.0.0.1:53"
+      - "--certificatesresolvers.cloudflare.acme.dnschallenge.propagation.delaybeforechecks=120"
+      - "--certificatesresolvers.cloudflare.acme.domains[0].main=${DOMAINNAME}"
+      - "--certificatesresolvers.cloudflare.acme.domains[0].sans=*.${DOMAINNAME}"
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 30s
@@ -69,8 +135,10 @@ services:
     ports:
       - "80:80"
       - "443:443"
-#     - "XXXX:8080"
+      - "81:81"   # external HTTP redirect (router maps internet :80 → here)
+      - "444:444" # external HTTPS (router maps internet :443 → here)
     environment:
+      # CF_API_EMAIL is referenced in the ACME command arg via {{env "CF_API_EMAIL"}}
       - CF_API_EMAIL=${CLOUDFLARE_EMAIL}
       - CF_API_KEY=${CLOUDFLARE_API_KEY}
     labels:
@@ -82,7 +150,10 @@ services:
       - "traefik.http.routers.traefik.middlewares=secured@file"
       - "traefik.docker.network=traefik_proxy"
     volumes:
-      - ${USERDIR}/docker/traefik:/etc/traefik
+      # Only mount the files Traefik actually needs — traefik.toml is NOT mounted
+      # (static config is now in the command: section above)
+      - ${USERDIR}/docker/traefik/rules.toml:/etc/traefik/rules.toml:ro
+      - ${USERDIR}/docker/traefik/acme:/etc/traefik/acme
       - ${USERDIR}/docker/shared:/shared
       - /var/log/docker:/var/log/docker # for fail2ban - make sure to touch file before starting container
       - ${USERDIR}/docker/traefik/logs:/var/log/traefik # access logs
@@ -122,7 +193,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.forward-auth.rule=Host(`auth.${DOMAINNAME}`)"
-      - "traefik.http.routers.forward-auth.entrypoints=websecure"
+      - "traefik.http.routers.forward-auth.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.forward-auth.tls=true"
       - "traefik.http.routers.forward-auth.middlewares=secure-headers@file"
       - "traefik.http.services.forward-auth.loadbalancer.server.port=4181"
@@ -224,7 +295,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.organizr.rule=Host(`organizr.${DOMAINNAME}`)"
-      - "traefik.http.routers.organizr.entrypoints=websecure"
+      - "traefik.http.routers.organizr.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.organizr.tls=true"
       - "traefik.http.routers.organizr.middlewares=secured@file"
       - "traefik.http.services.organizr.loadbalancer.server.port=80"
@@ -669,7 +740,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.plexms.rule=Host(`plex.${DOMAINNAME}`)"
-      - "traefik.http.routers.plexms.entrypoints=websecure"
+      - "traefik.http.routers.plexms.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.plexms.tls=true"
       - "traefik.http.routers.plexms.middlewares=secured@file"
       - "traefik.http.services.plexms.loadbalancer.server.port=32400"
@@ -706,7 +777,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.jellyfin.rule=Host(`jellyfin.${DOMAINNAME}`)"
-      - "traefik.http.routers.jellyfin.entrypoints=websecure"
+      - "traefik.http.routers.jellyfin.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.jellyfin.tls=true"
       - "traefik.http.routers.jellyfin.middlewares=secure-headers@file"
       - "traefik.http.services.jellyfin.loadbalancer.server.port=8096"
@@ -731,7 +802,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.funkwhale.rule=Host(`funkwhale.${DOMAINNAME}`)"
-      - "traefik.http.routers.funkwhale.entrypoints=websecure"
+      - "traefik.http.routers.funkwhale.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.funkwhale.tls=true"
       - "traefik.http.routers.funkwhale.middlewares=secured@file"
       - "traefik.http.services.funkwhale.loadbalancer.server.port=80"
@@ -788,7 +859,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.ubooquity.rule=Host(`ubooquity.${DOMAINNAME}`)"
-      - "traefik.http.routers.ubooquity.entrypoints=websecure"
+      - "traefik.http.routers.ubooquity.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.ubooquity.tls=true"
       - "traefik.http.routers.ubooquity.middlewares=secured@file"
       - "traefik.http.services.ubooquity.loadbalancer.server.port=2202"
@@ -821,7 +892,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.calibre-web.rule=Host(`calibre-web.${DOMAINNAME}`)"
-      - "traefik.http.routers.calibre-web.entrypoints=websecure"
+      - "traefik.http.routers.calibre-web.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.calibre-web.tls=true"
       - "traefik.http.routers.calibre-web.middlewares=secured@file"
       - "traefik.http.services.calibre-web.loadbalancer.server.port=8083"
@@ -902,7 +973,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.audiobookshelf.rule=Host(`audiobookshelf.${DOMAINNAME}`)"
-      - "traefik.http.routers.audiobookshelf.entrypoints=websecure"
+      - "traefik.http.routers.audiobookshelf.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.audiobookshelf.tls=true"
       - "traefik.http.routers.audiobookshelf.middlewares=secured@file"
       - "traefik.http.services.audiobookshelf.loadbalancer.server.port=80"
@@ -1100,7 +1171,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAINNAME}`)"
-      - "traefik.http.routers.nextcloud.entrypoints=websecure"
+      - "traefik.http.routers.nextcloud.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.nextcloud.tls=true"
       - "traefik.http.routers.nextcloud.middlewares=nextcloud-headers@file,nextcloud-redirect@file"
       - "traefik.http.services.nextcloud.loadbalancer.server.port=443"
@@ -1138,7 +1209,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.bitwarden.rule=Host(`bitwarden.${DOMAINNAME}`)"
-      - "traefik.http.routers.bitwarden.entrypoints=websecure"
+      - "traefik.http.routers.bitwarden.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.bitwarden.tls=true"
       - "traefik.http.routers.bitwarden.middlewares=secure-headers@file"
       - "traefik.http.services.bitwarden.loadbalancer.server.port=80"
@@ -1187,7 +1258,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.guacamole.rule=Host(`guac.${DOMAINNAME}`)"
-      - "traefik.http.routers.guacamole.entrypoints=websecure"
+      - "traefik.http.routers.guacamole.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.guacamole.tls=true"
       - "traefik.http.routers.guacamole.middlewares=secured@file"
       - "traefik.http.services.guacamole.loadbalancer.server.port=8080"
@@ -1269,7 +1340,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.heimdall.rule=Host(`${DOMAINNAME}`, `www.${DOMAINNAME}`, `heimdall.${DOMAINNAME}`)"
-      - "traefik.http.routers.heimdall.entrypoints=websecure"
+      - "traefik.http.routers.heimdall.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.heimdall.tls=true"
       - "traefik.http.routers.heimdall.middlewares=secured@file"
       - "traefik.http.services.heimdall.loadbalancer.server.port=80"
@@ -1351,7 +1422,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.nginx-file-browser.rule=Host(`file-server.${DOMAINNAME}`)"
-      - "traefik.http.routers.nginx-file-browser.entrypoints=websecure"
+      - "traefik.http.routers.nginx-file-browser.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.nginx-file-browser.tls=true"
       - "traefik.http.routers.nginx-file-browser.middlewares=secure-headers@file"
       - "traefik.http.services.nginx-file-browser.loadbalancer.server.port=80"
@@ -1677,7 +1748,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.api-gateway.rule=Host(`notes.${DOMAINNAME}`)"
-      - "traefik.http.routers.api-gateway.entrypoints=websecure"
+      - "traefik.http.routers.api-gateway.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.api-gateway.tls=true"
       - "traefik.http.routers.api-gateway.middlewares=secure-headers@file"
       - "traefik.http.services.api-gateway.loadbalancer.server.port=3000"
@@ -1779,7 +1850,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.snext.rule=Host(`notes-ext.${DOMAINNAME}`)"
-      - "traefik.http.routers.snext.entrypoints=websecure"
+      - "traefik.http.routers.snext.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.snext.tls=true"
       - "traefik.http.routers.snext.middlewares=secure-headers@file"
       - "traefik.http.services.snext.loadbalancer.server.port=80"
@@ -1824,7 +1895,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.snweb.rule=Host(`notes-web.${DOMAINNAME}`)"
-      - "traefik.http.routers.snweb.entrypoints=websecure"
+      - "traefik.http.routers.snweb.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.snweb.tls=true"
       - "traefik.http.routers.snweb.middlewares=secure-headers@file"
       - "traefik.http.services.snweb.loadbalancer.server.port=3001"
@@ -2049,7 +2120,7 @@ services:
       - "me.tale.headplane.target=headscale"
       - "traefik.enable=true"
       - "traefik.http.routers.headscale.rule=Host(`headscale.${DOMAINNAME}`)"
-      - "traefik.http.routers.headscale.entrypoints=websecure"
+      - "traefik.http.routers.headscale.entrypoints=websecure,websecure-external"
       - "traefik.http.routers.headscale.tls=true"
       - "traefik.http.routers.headscale.middlewares=secure-headers@file"
       - "traefik.http.services.headscale.loadbalancer.server.port=8080"
