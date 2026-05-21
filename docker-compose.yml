@@ -1133,6 +1133,42 @@ services:
       - "traefik.http.services.jackett.loadbalancer.server.port=9117"
       - "traefik.docker.network=traefik_proxy"
 
+# Autobrr – Modern torrent download automation (IRC/RSS → qBittorrent/SABnzbd/etc.)
+# Connect to qBittorrent at http://qbittorrent:8080 and SABnzbd at http://sabnzbd:8080
+  autobrr:
+    image: ghcr.io/autobrr/autobrr:latest
+    container_name: autobrr
+    restart: unless-stopped
+    user: ${PUID}:${PGID}
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - TZ=${TZ}
+      # Required: set listen address to 0.0.0.0 so Traefik can reach the container
+      - AUTOBRR__HOST=0.0.0.0
+      - AUTOBRR__PORT=7474
+      - AUTOBRR__LOG_LEVEL=INFO
+      # Required: random secret for session signing — set in .env
+      - AUTOBRR__SESSION_SECRET=${AUTOBRR_SESSION_SECRET}
+    volumes:
+      - ${USERDIR}/docker/autobrr:/config
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:7474/api/healthz/liveness"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.autobrr.rule=Host(`autobrr.${DOMAINNAME}`)"
+      - "traefik.http.routers.autobrr.entrypoints=websecure-internal"
+      - "traefik.http.routers.autobrr.tls=true"
+      - "traefik.http.routers.autobrr.middlewares=secured@file"
+      - "traefik.http.services.autobrr.loadbalancer.server.port=7474"
+      - "traefik.docker.network=traefik_proxy"
+
 ######### UTILITIES ##########
 
 # MariaDB – Database Server for your Apps
