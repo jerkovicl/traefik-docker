@@ -1,0 +1,16 @@
+# Secrets — never commit these
+.env
+.env.*
+!.env.example
+
+# ACME/Let's Encrypt certificate storage (contains private keys)
+**/acme.json
+acme.json
+
+# Logs
+*.log
+logs/
+
+# OS junk
+.DS_Store
+Thumbs.db
