@@ -31,18 +31,18 @@
 # NOTE: This file is kept as reference documentation.
 # The active static config is now in docker-compose.yml under traefik.command.
 # Architecture:
-#   web         :80  → redirects to websecure  (LAN only)
+#   web         :80  → redirects to websecure-internal  (LAN only)
 #   web-external:81  → redirects to websecure-external (internet via Cloudflare)
-#   websecure   :443 → LAN-only HTTPS (router does NOT forward external :443 here)
+#   websecure-internal   :443 → LAN-only HTTPS (router does NOT forward external :443 here)
 #   websecure-external :444 → external HTTPS (router forwards external :443 → Traefik :444)
 #   monitor     :8081 → healthcheck/ping endpoint
 [entryPoints]
-  [entryPoints.web]
+  [entryPoints.web-internal]
     address = ":80"
-    [entryPoints.web.http.redirections.entryPoint]
-      to = "websecure"
+    [entryPoints.web-internal.http.redirections.entryPoint]
+      to = "websecure-internal"
       scheme = "https"
-    [entryPoints.web.forwardedHeaders]
+    [entryPoints.web-internal.forwardedHeaders]
       # Allow Cloudflare and local networks to set X-Forwarded-* headers
       # Cloudflare IPs: https://www.cloudflare.com/ips/
       trustedIPs = [
@@ -73,12 +73,12 @@
         "2405:b500::/32", "2405:8100::/32", "2a06:98c0::/29", "2c0f:f248::/32",
         "127.0.0.1/32", "10.0.0.0/8", "192.168.0.0/16", "172.16.0.0/12"
       ]
-  [entryPoints.websecure]
+  [entryPoints.websecure-internal]
     address = ":443"
-    [entryPoints.websecure.http.tls]
+    [entryPoints.websecure-internal.http.tls]
       certResolver = "cloudflare"
       options = "default"
-    [entryPoints.websecure.forwardedHeaders]
+    [entryPoints.websecure-internal.forwardedHeaders]
       trustedIPs = [
         "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22",
         "103.31.4.0/22", "141.101.64.0/18", "108.162.192.0/18",
@@ -91,7 +91,7 @@
         "127.0.0.1/32", "10.0.0.0/8", "192.168.0.0/16", "172.16.0.0/12"
       ]
   # External HTTPS — router maps internet :443 → this port (:444)
-  # Services that should be internet-accessible use entrypoints=websecure,websecure-external
+  # Services that should be internet-accessible use entrypoints=websecure-internal,websecure-external
   [entryPoints.websecure-external]
     address = ":444"
     [entryPoints.websecure-external.http.tls]
