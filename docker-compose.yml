@@ -2,7 +2,7 @@
 #Requirement: nano .env -> Set environmental variables: ${$USERDIR}, ${PUID}, ${PGID}, ${TZ}, ${DOMAINNAME}, ${CLOUDFLARE_EMAIL},  ${CLOUDFLARE_API_KEY}, ${HTTP_USERNAME}, ${HTTP_PASSWORD}, ${PLEX_CLAIM} etc. as explained in the reference.
 
 # healthchecks TODO: traefik keycloak syncing-server-js auth 
-# TODO: explore cadvisor, DeUnhealth, dockhand from deployrr
+# TODO: explore cadvisor, DeUnhealth, dockhand, FreshRSS from deployrr
 
 #version: "3.8"
 services:
@@ -2333,7 +2333,7 @@ services:
       # Ensure that the path matches `headscale.dns_records_path` in your
       # Headplane config.yaml file.
       - ${USERDIR}/docker/headscale/config/extra_records.json:/var/lib/headplane/extra_records.json
-      - /var/run/docker.sock:/var/run/docker.sock:ro # Read-only access to the Docker socket (or a proxy)
+      # docker.sock replaced by socket-proxy — see HEADPLANE_INTEGRATION__DOCKER__SOCKET below
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
@@ -2343,6 +2343,9 @@ services:
       - HEADPLANE_SERVER__COOKIE_SECRET=${HEADPLANE_COOKIE_SECRET}
       - HEADPLANE_HEADSCALE__PUBLIC_URL=https://headscale.${DOMAINNAME}
       - HEADPLANE_INTEGRATION__AGENT_PRE_AUTHKEY=${HEADSCALE_PRE_AUTH_KEY}
+      # Route Docker API calls through socket-proxy (officially supported via tcp://)
+      # Needs only CONTAINERS=1 + POST=1 on socket-proxy (both already enabled)
+      - HEADPLANE_INTEGRATION__DOCKER__SOCKET=tcp://socket-proxy:2375
       - HEADPLANE_OIDC__HEADSCALE_API_KEY=${HEADSCALE_API_KEY}
       # TODO: Update slug after creating the application in Authentik UI (Applications > Wizard)
       - HEADPLANE_OIDC__ISSUER=https://authentik.${DOMAINNAME}/application/o/headplane/
@@ -2351,6 +2354,7 @@ services:
       - HEADPLANE_OIDC__REDIRECT_URI=https://headplane.${DOMAINNAME}/admin/oidc/callback
     networks:
       - traefik_proxy
+      - socket_proxy
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.headplane.rule=Host(`headplane.${DOMAINNAME}`) && PathPrefix(`/admin/`)"
