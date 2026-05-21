@@ -294,11 +294,25 @@ services:
   certsdump:
     container_name: certsdump
     image: ldez/traefik-certs-dumper:v2.11.2
-    # --watch keeps the process running and re-dumps whenever acme.json changes
-    # (i.e. on every LE cert renewal, ~every 60 days). Without --watch, renewed
-    # certs would never be written to disk and services would eventually serve
-    # expired certificates.
-    command: file --watch --source /acme.json --dest /dump/live --domain-subdir --crt-name=fullchain --key-name=privkey --crt-ext=.pem --key-ext=.pem
+    # Wait until acme.json exists AND contains at least one certificate before
+    # starting the dumper. This guards against the race condition on first boot
+    # where Traefik hasn't obtained its LE cert yet. Once ready, --watch keeps
+    # the process alive and re-dumps on every renewal (~every 60 days).
+    entrypoint: sh -c '
+      while ! [ -e /acme.json ] ||
+        ! [ `jq ".[] | .Certificates | length" /acme.json | jq -s "add"` != 0 ]; do
+        sleep 1;
+      done
+      && traefik-certs-dumper file
+        --version v3
+        --watch
+        --source /acme.json
+        --dest /dump/live
+        --domain-subdir
+        --crt-name=fullchain
+        --key-name=privkey
+        --crt-ext=.pem
+        --key-ext=.pem'
     volumes:
       - ${USERDIR}/docker/traefik/acme/acme.json:/acme.json:ro
       - ${USERDIR}/docker/shared/letsencrypt/etc:/dump
