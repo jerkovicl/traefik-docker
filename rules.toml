@@ -26,6 +26,7 @@
     middlewares = ["forward-auth", "secure-headers"]
 
 # Global TLS options (dynamic config — must NOT be in traefik.toml)
+# Only GCM ciphers retained — CBC variants removed (weaker, not used by TLS 1.3)
 [tls.options.default]
   minVersion = "VersionTLS12"
   cipherSuites = [
@@ -33,8 +34,9 @@
     "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
     "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
     "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
-    "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
-    "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256"
+    "TLS_AES_128_GCM_SHA256",
+    "TLS_AES_256_GCM_SHA384",
+    "TLS_CHACHA20_POLY1305_SHA256"
   ]
 
 # External (non-Docker) service routes
@@ -43,6 +45,7 @@
     rule = "Host(`hassio.example.com`)"
     service = "backend-hassio"
     entryPoints = ["websecure"]
+    middlewares = ["secure-headers@file"]
     [http.routers.hassio.tls]
 
 [http.services]

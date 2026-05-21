@@ -15,6 +15,12 @@ services:
     container_name: traefik
     restart: always
     domainname: ${DOMAINNAME}
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       - default
       - traefik_proxy
@@ -1452,27 +1458,12 @@ services:
 #    command: ["gunicorn", "-b", "0.0.0.0:8000"]
 #    labels:
 #      - "traefik.enable=true"
-#      - "traefik.backend=paperless"
-# #      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /paperless"
-#      - "traefik.frontend.rule=Host:paperless.${DOMAINNAME}"
-#      - "traefik.port=8000"
+#      - "traefik.http.routers.paperless.rule=Host(`paperless.${DOMAINNAME}`)"
+#      - "traefik.http.routers.paperless.entrypoints=websecure"
+#      - "traefik.http.routers.paperless.tls=true"
+#      - "traefik.http.routers.paperless.middlewares=secured@file"
+#      - "traefik.http.services.paperless.loadbalancer.server.port=8000"
 #      - "traefik.docker.network=traefik_proxy"
-#      - "traefik.frontend.passHostHeader=true"
-#      - "traefik.frontend.headers.SSLForceHost=true"
-#      - "traefik.frontend.headers.SSLRedirect=true"
-#      - "traefik.frontend.headers.STSSeconds=315360000"
-#      - "traefik.frontend.headers.browserXSSFilter=true"
-#      - "traefik.frontend.headers.contentTypeNosniff=true"
-#      - "traefik.frontend.headers.forceSTSHeader=true"
-#      - "traefik.frontend.headers.SSLHost=paperless.${DOMAINNAME}"
-#      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-#      - "traefik.frontend.headers.STSPreload=true"
-#      - "traefik.frontend.headers.frameDeny=true"
-#      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-#      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-#      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-#      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-#      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 #  paperless_consumer:
 #    image: thepaperlessproject/paperless
