@@ -132,9 +132,6 @@ services:
       # Geoblock: block traffic from countries not in allowedCountries list (rules.toml)
       - "--experimental.plugins.geoblock.modulename=github.com/nscuro/traefik-plugin-geoblock"
       - "--experimental.plugins.geoblock.version=v0.14.0"
-      # Fail2Ban: ban IPs with repeated 4xx errors (rules.toml)
-      - "--experimental.plugins.fail2ban.modulename=github.com/tomMoulard/fail2ban"
-      - "--experimental.plugins.fail2ban.version=v0.8.2"
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 30s
