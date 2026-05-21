@@ -161,94 +161,105 @@ services:
       socket-proxy:
         condition: service_started
 
-# The auth gate for SSO
-  traefik-forward-auth:
-    image: thomseddon/traefik-forward-auth
-    #image: funkypenguin/traefik-forward-auth
-    container_name: traefik-forward-auth
+# ========== AUTHENTIK - Identity Provider & SSO (replaces Keycloak + traefik-forward-auth) ==========
+# NOTE: Add AUTHENTIK_DB_PASSWORD and AUTHENTIK_SECRET_KEY to your .env file
+# Initial setup: visit https://authentik.YOURDOMAIN/if/flow/initial-setup/ after first start
+  authentik:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION:-2025.12.1}
+    container_name: authentik
     restart: unless-stopped
-    dns:
-      - 127.0.0.1
-      # Sets a backup server of your choosing in case DNSMasq has problems starting
-      - 1.1.1.1
+    security_opt:
+      - no-new-privileges:true
+    command: server
     networks:
       - traefik_proxy
-      #- keycloak
+      - default
+    depends_on:
+      authentik-postgresql:
+        condition: service_healthy
     environment:
-        DEFAULT_PROVIDER: oidc
-        # This is based on using the Master realm. Create a new client, this will go into your CLIENT_ID, CLIENT_SECRET details.
-        PROVIDERS_OIDC_ISSUER_URL: https://keycloak.${DOMAINNAME}/auth/realms/master
-        PROVIDERS_OIDC_CLIENT_ID: ${AUTH_CLIENT_ID}
-        PROVIDERS_OIDC_CLIENT_SECRET: ${AUTH_CLIENT_SECRET}
-        SECRET: ${HTTP_PASSWORD}
-        AUTH_HOST: auth.${DOMAINNAME}
-        INSECURE_COOKIE: false
-        COOKIE_DOMAIN: ${DOMAINNAME}
-        LIFETIME: "2592000"
-        URL_PATH: /_oauth
-        CONFIG: "/rules/rules.ini"
-        LOG_LEVEL: debug # trace|debug|info|warn|error|fatal|panic
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:?err}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?err}
+      AUTHENTIK_LOG_LEVEL: info
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "false"
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
     volumes:
-      - ${USERDIR}/docker/traefik-forward-auth/rules:/rules
+      - ${USERDIR}/docker/authentik/media:/media
+      - ${USERDIR}/docker/authentik/templates:/templates
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.forward-auth.rule=Host(`auth.${DOMAINNAME}`)"
-      - "traefik.http.routers.forward-auth.entrypoints=websecure-internal,websecure-external"
-      - "traefik.http.routers.forward-auth.tls=true"
-      - "traefik.http.routers.forward-auth.middlewares=secure-headers@file"
-      - "traefik.http.services.forward-auth.loadbalancer.server.port=4181"
+      # Main router — admin & login UI
+      - "traefik.http.routers.authentik-rtr.rule=Host(`authentik.${DOMAINNAME}`)"
+      - "traefik.http.routers.authentik-rtr.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.authentik-rtr.tls=true"
+      - "traefik.http.routers.authentik-rtr.tls.certresolver=dns-cloudflare"
+      - "traefik.http.routers.authentik-rtr.middlewares=secure-headers@file"
+      - "traefik.http.routers.authentik-rtr.service=authentik-svc"
+      # Catch-all outpost router — intercepts /outpost.goauthentik.io/ on ALL subdomains for forward auth
+      - "traefik.http.routers.authentik-output-rtr.rule=HostRegexp(`{subdomain:[a-z0-9-]+}.${DOMAINNAME}`) && PathPrefix(`/outpost.goauthentik.io/`)"
+      - "traefik.http.routers.authentik-output-rtr.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.authentik-output-rtr.tls=true"
+      - "traefik.http.routers.authentik-output-rtr.tls.certresolver=dns-cloudflare"
+      - "traefik.http.routers.authentik-output-rtr.middlewares=secure-headers@file"
+      - "traefik.http.routers.authentik-output-rtr.service=authentik-svc"
+      # Service definition (shared by both routers)
+      - "traefik.http.services.authentik-svc.loadbalancer.server.port=9000"
       - "traefik.docker.network=traefik_proxy"
-    depends_on:
-      traefik:
-        condition: service_started #service_healthy
-      keycloak:
-        condition: service_started
 
-# Keycloak - identity and access management solution
-  keycloak:
-    image: jboss/keycloak
-    container_name: keycloak
-    domainname: ${DOMAINNAME}
-    restart: always
-#    ports:
-#      - "8080:8080"
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION:-2025.12.1}
+    container_name: authentik-worker
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command: worker
     networks:
       - traefik_proxy
-      - keycloak
-    volumes:
-#      - ${USERDIR}/docker/keycloak/config.json:/config.json
-      - /etc/timezone:/etc/timezone:ro
-      - /etc/localtime:/etc/localtime:ro
-      #- /var/log/docker/keycloak:/opt/jboss/keycloak/standalone/log
-    environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
-      - KEYCLOAK_USER=${KEYCLOAK_USER} # enable on startup only
-      - KEYCLOAK_PASSWORD=${KEYCLOAK_PASSWORD}
-#      - KEYCLOAK_IMPORT=/config.json
-      - DB_VENDOR=mariadb
-      - DB_DATABASE=keycloak
-      - DB_ADDR=mariadb
-      - DB_USER=keycloak
-      - DB_PASSWORD=${MYSQL_ROOT_PASSWORD}
-#     - JBOSS_LOG_DIR=/opt/wildfly/logs
-# This is required to run keycloak behind traefik
-      - PROXY_ADDRESS_FORWARDING=true
-      - KEYCLOAK_HOSTNAME=keycloak.${DOMAINNAME}
-# Tell MYSQL what user/password to create
-      - MYSQL_USER=keycloak
-      - MYSQL_PASSWORD=${MYSQL_ROOT_PASSWORD}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.keycloak.rule=Host(`keycloak.${DOMAINNAME}`)"
-      - "traefik.http.routers.keycloak.entrypoints=websecure-internal,websecure-external"
-      - "traefik.http.routers.keycloak.tls=true"
-      - "traefik.http.routers.keycloak.middlewares=secure-headers@file"
-      - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
-      - "traefik.docker.network=traefik_proxy"
+      - default
+      - socket_proxy
     depends_on:
-      mariadb:
-        condition: service_started
+      authentik-postgresql:
+        condition: service_healthy
+    environment:
+      DOCKER_HOST: tcp://socket-proxy:2375
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:?err}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?err}
+      AUTHENTIK_LOG_LEVEL: info
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "false"
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+    volumes:
+      - ${USERDIR}/docker/authentik/media:/media
+      - ${USERDIR}/docker/authentik/templates:/templates
+
+  authentik-postgresql:
+    image: postgres:16-alpine
+    container_name: authentik-postgresql
+    restart: unless-stopped
+    networks:
+      - default
+    environment:
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD:?err}
+      POSTGRES_DB: authentik
+    volumes:
+      - ${USERDIR}/docker/authentik/postgresql:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+# REMOVED: keycloak (jboss/keycloak - deprecated image, replaced by Authentik above)
+# REMOVED: traefik-forward-auth (thomseddon - Authentik has built-in forward auth outpost)
  
  #Portainer - WebUI for Containers
  # reset password with https://docs.portainer.io/advanced/reset-admin, using this command docker run --rm -v ~/docker/portainer/data:/data portainer/helper-reset-password
@@ -2165,7 +2176,8 @@ services:
       - HEADPLANE_HEADSCALE__PUBLIC_URL=https://headscale.${DOMAINNAME}
       - HEADPLANE_INTEGRATION__AGENT_PRE_AUTHKEY=${HEADSCALE_PRE_AUTH_KEY}
       - HEADPLANE_OIDC__HEADSCALE_API_KEY=${HEADSCALE_API_KEY}
-      - HEADPLANE_OIDC__ISSUER=https://keycloak.${DOMAINNAME}/auth/realms/master
+      # TODO: Update slug after creating the application in Authentik UI (Applications > Wizard)
+      - HEADPLANE_OIDC__ISSUER=https://authentik.${DOMAINNAME}/application/o/headplane/
       - HEADPLANE_OIDC__CLIENT_ID=${AUTH_CLIENT_ID}
       - HEADPLANE_OIDC__CLIENT_SECRET=${AUTH_CLIENT_SECRET}
       - HEADPLANE_OIDC__REDIRECT_URI=https://headplane.${DOMAINNAME}/admin/oidc/callback
@@ -2207,9 +2219,7 @@ networks:
   traefik_proxy:
     external: true
     name: traefik_proxy
-  keycloak:
-    external: true
-    name: keycloak
+  # keycloak network removed — Authentik uses traefik_proxy + default networks
   skynet:
     external: true
     name: skynet

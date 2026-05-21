@@ -49,15 +49,31 @@
     regex = "https://(.*)/.well-known/(card|cal)dav"
     replacement = "https://${1}/remote.php/dav/"
 
-  # SSO forward-auth middleware (via traefik-forward-auth)
-  [http.middlewares.forward-auth.forwardAuth]
-    address = "http://traefik-forward-auth:4181"
+  # SSO forward-auth middleware via Authentik embedded outpost
+  [http.middlewares.middlewares-authentik.forwardAuth]
+    address = "http://authentik:9000/outpost.goauthentik.io/auth/traefik"
     trustForwardHeader = true
-    authResponseHeaders = ["X-Forwarded-User"]
+    authResponseHeaders = [
+      "X-authentik-username",
+      "X-authentik-groups",
+      "X-authentik-email",
+      "X-authentik-name",
+      "X-authentik-uid",
+      "X-authentik-jwt",
+      "X-authentik-meta-jwks",
+      "X-authentik-meta-outpost",
+      "X-authentik-meta-provider",
+      "X-authentik-meta-app",
+      "X-authentik-meta-version"
+    ]
 
-  # Combined middleware chain: forward-auth + rate-limit + security headers
+  # Authentik middleware chain: rate-limit + security headers + authentik SSO
+  [http.middlewares.chain-authentik.chain]
+    middlewares = ["rate-limit", "secure-headers", "middlewares-authentik"]
+
+  # Combined middleware chain (alias for chain-authentik — used by services via secured@file label)
   [http.middlewares.secured.chain]
-    middlewares = ["rate-limit", "forward-auth", "secure-headers"]
+    middlewares = ["rate-limit", "secure-headers", "middlewares-authentik"]
 
 # Global TLS options (dynamic config — must NOT be in traefik.toml)
 # Only GCM ciphers retained — CBC variants removed (weaker, not used by TLS 1.3)
@@ -83,7 +99,7 @@
   [http.routers.hassio]
     rule = "Host(`hassio.example.com`)"
     service = "backend-hassio"
-    entryPoints = ["websecure"]
+    entryPoints = ["websecure-internal"]
     middlewares = ["secure-headers@file"]
     [http.routers.hassio.tls]
 
