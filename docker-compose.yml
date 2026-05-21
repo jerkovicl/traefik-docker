@@ -8,6 +8,43 @@ services:
 
 ######### FRONTENDS ##########
 
+# Docker Socket Proxy - Security-enhanced access to Docker API for Traefik
+# Only exposes the minimal API endpoints Traefik needs (read-only containers/networks/etc)
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy
+    container_name: socket-proxy
+    restart: always
+    networks:
+      socket_proxy:
+    privileged: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # Allow only what Traefik needs — everything else is disabled (0)
+      CONTAINERS: 1
+      NETWORKS: 1
+      SERVICES: 1
+      TASKS: 1
+      INFO: 1
+      EVENTS: 1
+      PING: 1
+      POST: 0
+      BUILD: 0
+      COMMIT: 0
+      CONFIGS: 0
+      DISTRIBUTION: 0
+      EXEC: 0
+      GRPC: 0
+      IMAGES: 0
+      NODES: 0
+      PLUGINS: 0
+      SECRETS: 0
+      SESSION: 0
+      SWARM: 0
+      SYSTEM: 0
+      VERSION: 0
+      VOLUMES: 0
+
 # Traefik Reverse Proxy
   traefik:
     hostname: traefik
@@ -24,6 +61,7 @@ services:
     networks:
       - default
       - traefik_proxy
+      - socket_proxy
     ports:
       - "80:80"
       - "443:443"
@@ -40,11 +78,13 @@ services:
       - "traefik.http.routers.traefik.middlewares=secured@file"
       - "traefik.docker.network=traefik_proxy"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${USERDIR}/docker/traefik:/etc/traefik
       - ${USERDIR}/docker/shared:/shared
       - /var/log/docker:/var/log/docker # for fail2ban - make sure to touch file before starting container
       - ${USERDIR}/docker/traefik/logs:/var/log/traefik # access logs
+    depends_on:
+      socket-proxy:
+        condition: service_started
 
 # The auth gate for SSO
   traefik-forward-auth:
@@ -2101,5 +2141,10 @@ networks:
 #    ipam:
 #      config:
 #        - subnet: 172.28.0.0/16
+  socket_proxy:
+    # Internal-only network — only traefik and socket-proxy can communicate on it
+    name: socket_proxy
+    driver: bridge
+    internal: true
   default:
       driver: bridge

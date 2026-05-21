@@ -77,9 +77,9 @@
   watch = true
   filename = "/etc/traefik/rules.toml"
 
-# Docker provider
+# Docker provider — reads container labels via socket proxy (not direct socket)
 [providers.docker]
-  endpoint = "unix:///var/run/docker.sock"
+  endpoint = "tcp://socket-proxy:2375"
   network = "traefik_proxy"
   watch = true
   # Only expose containers with traefik.enable=true label
