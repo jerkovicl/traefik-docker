@@ -530,11 +530,20 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.sabnzbd.rule=Host(`sabnzbd.${DOMAINNAME}`)"
-      - "traefik.http.routers.sabnzbd.entrypoints=websecure-internal"
-      - "traefik.http.routers.sabnzbd.tls=true"
-      - "traefik.http.routers.sabnzbd.middlewares=secured@file"
-      - "traefik.http.services.sabnzbd.loadbalancer.server.port=8080"
+      ## Bypass router — mobile apps (NZB360) skip Authentik with header key
+      - "traefik.http.routers.sabnzbd-rtr-bypass.rule=Host(`sabnzbd.${DOMAINNAME}`) && Header(`traefik-auth-bypass-key`,`${TRAEFIK_AUTH_BYPASS_KEY}`)"
+      - "traefik.http.routers.sabnzbd-rtr-bypass.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.sabnzbd-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.sabnzbd-rtr-bypass.service=sabnzbd-svc"
+      - "traefik.http.routers.sabnzbd-rtr-bypass.priority=100"
+      ## Auth router — browser access via LAN goes through Authentik
+      - "traefik.http.routers.sabnzbd-rtr.rule=Host(`sabnzbd.${DOMAINNAME}`)"
+      - "traefik.http.routers.sabnzbd-rtr.entrypoints=websecure-internal"
+      - "traefik.http.routers.sabnzbd-rtr.tls=true"
+      - "traefik.http.routers.sabnzbd-rtr.middlewares=secured@file"
+      - "traefik.http.routers.sabnzbd-rtr.service=sabnzbd-svc"
+      - "traefik.http.routers.sabnzbd-rtr.priority=99"
+      - "traefik.http.services.sabnzbd-svc.loadbalancer.server.port=8080"
       - "traefik.docker.network=traefik_proxy"
 
 ######### PERSONAL VIDEO RECORDERS ##########
@@ -560,11 +569,20 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.radarr.rule=Host(`radarr.${DOMAINNAME}`)"
-      - "traefik.http.routers.radarr.entrypoints=websecure-internal"
-      - "traefik.http.routers.radarr.tls=true"
-      - "traefik.http.routers.radarr.middlewares=secured@file"
-      - "traefik.http.services.radarr.loadbalancer.server.port=7878"
+      ## Bypass router — mobile apps (LunaSea, NZB360) skip Authentik with header key
+      - "traefik.http.routers.radarr-rtr-bypass.rule=Host(`radarr.${DOMAINNAME}`) && Header(`traefik-auth-bypass-key`,`${TRAEFIK_AUTH_BYPASS_KEY}`)"
+      - "traefik.http.routers.radarr-rtr-bypass.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.radarr-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.radarr-rtr-bypass.service=radarr-svc"
+      - "traefik.http.routers.radarr-rtr-bypass.priority=100"
+      ## Auth router — browser access via LAN goes through Authentik
+      - "traefik.http.routers.radarr-rtr.rule=Host(`radarr.${DOMAINNAME}`)"
+      - "traefik.http.routers.radarr-rtr.entrypoints=websecure-internal"
+      - "traefik.http.routers.radarr-rtr.tls=true"
+      - "traefik.http.routers.radarr-rtr.middlewares=secured@file"
+      - "traefik.http.routers.radarr-rtr.service=radarr-svc"
+      - "traefik.http.routers.radarr-rtr.priority=99"
+      - "traefik.http.services.radarr-svc.loadbalancer.server.port=7878"
       - "traefik.docker.network=traefik_proxy"
 
 # Sonarr – TV Show Download and Management
@@ -588,11 +606,20 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.sonarr.rule=Host(`sonarr.${DOMAINNAME}`)"
-      - "traefik.http.routers.sonarr.entrypoints=websecure-internal"
-      - "traefik.http.routers.sonarr.tls=true"
-      - "traefik.http.routers.sonarr.middlewares=secured@file"
-      - "traefik.http.services.sonarr.loadbalancer.server.port=8989"
+      ## Bypass router — mobile apps (LunaSea, NZB360) skip Authentik with header key
+      - "traefik.http.routers.sonarr-rtr-bypass.rule=Host(`sonarr.${DOMAINNAME}`) && Header(`traefik-auth-bypass-key`,`${TRAEFIK_AUTH_BYPASS_KEY}`)"
+      - "traefik.http.routers.sonarr-rtr-bypass.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.sonarr-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.sonarr-rtr-bypass.service=sonarr-svc"
+      - "traefik.http.routers.sonarr-rtr-bypass.priority=100"
+      ## Auth router — browser access via LAN goes through Authentik
+      - "traefik.http.routers.sonarr-rtr.rule=Host(`sonarr.${DOMAINNAME}`)"
+      - "traefik.http.routers.sonarr-rtr.entrypoints=websecure-internal"
+      - "traefik.http.routers.sonarr-rtr.tls=true"
+      - "traefik.http.routers.sonarr-rtr.middlewares=secured@file"
+      - "traefik.http.routers.sonarr-rtr.service=sonarr-svc"
+      - "traefik.http.routers.sonarr-rtr.priority=99"
+      - "traefik.http.services.sonarr-svc.loadbalancer.server.port=8989"
       - "traefik.docker.network=traefik_proxy"
 
 # LIDARR - Music Download and Management
@@ -617,11 +644,20 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.lidarr.rule=Host(`lidarr.${DOMAINNAME}`)"
-      - "traefik.http.routers.lidarr.entrypoints=websecure-internal"
-      - "traefik.http.routers.lidarr.tls=true"
-      - "traefik.http.routers.lidarr.middlewares=secured@file"
-      - "traefik.http.services.lidarr.loadbalancer.server.port=8686"
+      ## Bypass router — mobile apps (LunaSea) skip Authentik with header key
+      - "traefik.http.routers.lidarr-rtr-bypass.rule=Host(`lidarr.${DOMAINNAME}`) && Header(`traefik-auth-bypass-key`,`${TRAEFIK_AUTH_BYPASS_KEY}`)"
+      - "traefik.http.routers.lidarr-rtr-bypass.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.lidarr-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.lidarr-rtr-bypass.service=lidarr-svc"
+      - "traefik.http.routers.lidarr-rtr-bypass.priority=100"
+      ## Auth router — browser access via LAN goes through Authentik
+      - "traefik.http.routers.lidarr-rtr.rule=Host(`lidarr.${DOMAINNAME}`)"
+      - "traefik.http.routers.lidarr-rtr.entrypoints=websecure-internal"
+      - "traefik.http.routers.lidarr-rtr.tls=true"
+      - "traefik.http.routers.lidarr-rtr.middlewares=secured@file"
+      - "traefik.http.routers.lidarr-rtr.service=lidarr-svc"
+      - "traefik.http.routers.lidarr-rtr.priority=99"
+      - "traefik.http.services.lidarr-svc.loadbalancer.server.port=8686"
       - "traefik.docker.network=traefik_proxy"
 
 # Bazarr - Subtitles download and managment
@@ -645,11 +681,20 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.bazarr.rule=Host(`bazarr.${DOMAINNAME}`)"
-      - "traefik.http.routers.bazarr.entrypoints=websecure-internal"
-      - "traefik.http.routers.bazarr.tls=true"
-      - "traefik.http.routers.bazarr.middlewares=secured@file"
-      - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
+      ## Bypass router — mobile apps (NZB360) skip Authentik with header key
+      - "traefik.http.routers.bazarr-rtr-bypass.rule=Host(`bazarr.${DOMAINNAME}`) && Header(`traefik-auth-bypass-key`,`${TRAEFIK_AUTH_BYPASS_KEY}`)"
+      - "traefik.http.routers.bazarr-rtr-bypass.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.bazarr-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.bazarr-rtr-bypass.service=bazarr-svc"
+      - "traefik.http.routers.bazarr-rtr-bypass.priority=100"
+      ## Auth router — browser access via LAN goes through Authentik
+      - "traefik.http.routers.bazarr-rtr.rule=Host(`bazarr.${DOMAINNAME}`)"
+      - "traefik.http.routers.bazarr-rtr.entrypoints=websecure-internal"
+      - "traefik.http.routers.bazarr-rtr.tls=true"
+      - "traefik.http.routers.bazarr-rtr.middlewares=secured@file"
+      - "traefik.http.routers.bazarr-rtr.service=bazarr-svc"
+      - "traefik.http.routers.bazarr-rtr.priority=99"
+      - "traefik.http.services.bazarr-svc.loadbalancer.server.port=6767"
       - "traefik.docker.network=traefik_proxy"
 
 # Proxy server to bypass Cloudflare protection
@@ -750,12 +795,21 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.plexms.rule=Host(`plex.${DOMAINNAME}`)"
-      - "traefik.http.routers.plexms.entrypoints=websecure-internal,websecure-external"
-      - "traefik.http.routers.plexms.tls=true"
-      - "traefik.http.routers.plexms.middlewares=secured@file"
-      - "traefik.http.services.plexms.loadbalancer.server.port=32400"
-      - "traefik.http.services.plexms.loadbalancer.server.scheme=http"
+      ## Bypass router — Plex mobile/TV apps use their own auth after bypassing Authentik
+      - "traefik.http.routers.plexms-rtr-bypass.rule=Host(`plex.${DOMAINNAME}`) && Header(`traefik-auth-bypass-key`,`${TRAEFIK_AUTH_BYPASS_KEY}`)"
+      - "traefik.http.routers.plexms-rtr-bypass.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.plexms-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.plexms-rtr-bypass.service=plexms-svc"
+      - "traefik.http.routers.plexms-rtr-bypass.priority=100"
+      ## Auth router — browser access goes through Authentik
+      - "traefik.http.routers.plexms-rtr.rule=Host(`plex.${DOMAINNAME}`)"
+      - "traefik.http.routers.plexms-rtr.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.plexms-rtr.tls=true"
+      - "traefik.http.routers.plexms-rtr.middlewares=secured@file"
+      - "traefik.http.routers.plexms-rtr.service=plexms-svc"
+      - "traefik.http.routers.plexms-rtr.priority=99"
+      - "traefik.http.services.plexms-svc.loadbalancer.server.port=32400"
+      - "traefik.http.services.plexms-svc.loadbalancer.server.scheme=http"
       - "traefik.docker.network=traefik_proxy"
 
 # Jellyfin - Media Server
@@ -902,11 +956,20 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.calibre-web.rule=Host(`calibre-web.${DOMAINNAME}`)"
-      - "traefik.http.routers.calibre-web.entrypoints=websecure-internal,websecure-external"
-      - "traefik.http.routers.calibre-web.tls=true"
-      - "traefik.http.routers.calibre-web.middlewares=secured@file"
-      - "traefik.http.services.calibre-web.loadbalancer.server.port=8083"
+      ## Bypass router — reading apps skip Authentik with header key
+      - "traefik.http.routers.calibre-web-rtr-bypass.rule=Host(`calibre-web.${DOMAINNAME}`) && Header(`traefik-auth-bypass-key`,`${TRAEFIK_AUTH_BYPASS_KEY}`)"
+      - "traefik.http.routers.calibre-web-rtr-bypass.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.calibre-web-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.calibre-web-rtr-bypass.service=calibre-web-svc"
+      - "traefik.http.routers.calibre-web-rtr-bypass.priority=100"
+      ## Auth router — browser access goes through Authentik
+      - "traefik.http.routers.calibre-web-rtr.rule=Host(`calibre-web.${DOMAINNAME}`)"
+      - "traefik.http.routers.calibre-web-rtr.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.calibre-web-rtr.tls=true"
+      - "traefik.http.routers.calibre-web-rtr.middlewares=secured@file"
+      - "traefik.http.routers.calibre-web-rtr.service=calibre-web-svc"
+      - "traefik.http.routers.calibre-web-rtr.priority=99"
+      - "traefik.http.services.calibre-web-svc.loadbalancer.server.port=8083"
       - "traefik.docker.network=traefik_proxy"
   
   calibre:
@@ -983,11 +1046,20 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.audiobookshelf.rule=Host(`audiobookshelf.${DOMAINNAME}`)"
-      - "traefik.http.routers.audiobookshelf.entrypoints=websecure-internal,websecure-external"
-      - "traefik.http.routers.audiobookshelf.tls=true"
-      - "traefik.http.routers.audiobookshelf.middlewares=secured@file"
-      - "traefik.http.services.audiobookshelf.loadbalancer.server.port=80"
+      ## Bypass router — mobile app skips Authentik with header key, uses built-in ABS auth
+      - "traefik.http.routers.audiobookshelf-rtr-bypass.rule=Host(`audiobookshelf.${DOMAINNAME}`) && Header(`traefik-auth-bypass-key`,`${TRAEFIK_AUTH_BYPASS_KEY}`)"
+      - "traefik.http.routers.audiobookshelf-rtr-bypass.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.audiobookshelf-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.audiobookshelf-rtr-bypass.service=audiobookshelf-svc"
+      - "traefik.http.routers.audiobookshelf-rtr-bypass.priority=100"
+      ## Auth router — browser access goes through Authentik
+      - "traefik.http.routers.audiobookshelf-rtr.rule=Host(`audiobookshelf.${DOMAINNAME}`)"
+      - "traefik.http.routers.audiobookshelf-rtr.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.audiobookshelf-rtr.tls=true"
+      - "traefik.http.routers.audiobookshelf-rtr.middlewares=secured@file"
+      - "traefik.http.routers.audiobookshelf-rtr.service=audiobookshelf-svc"
+      - "traefik.http.routers.audiobookshelf-rtr.priority=99"
+      - "traefik.http.services.audiobookshelf-svc.loadbalancer.server.port=80"
       - "traefik.docker.network=traefik_proxy"
 
 ######### SEARCHERS ##########

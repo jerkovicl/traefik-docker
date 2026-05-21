@@ -67,6 +67,10 @@
       "X-authentik-meta-version"
     ]
 
+  # No-auth chain: rate-limit + security headers only (used by bypass routers for mobile app access)
+  [http.middlewares.chain-no-auth.chain]
+    middlewares = ["rate-limit", "secure-headers"]
+
   # Authentik middleware chain: rate-limit + security headers + authentik SSO
   [http.middlewares.chain-authentik.chain]
     middlewares = ["rate-limit", "secure-headers", "middlewares-authentik"]
