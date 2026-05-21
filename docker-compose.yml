@@ -275,7 +275,7 @@ services:
       POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD:?err}
       POSTGRES_DB: authentik
     volumes:
-      - ${USERDIR}/docker/authentik/postgresql:/var/lib/postgresql/data
+      - ${USERDIR}/docker/postgresql:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
       interval: 10s
