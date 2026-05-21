@@ -3,6 +3,7 @@
 
 # healthchecks TODO: traefik keycloak syncing-server-js auth 
 # TODO: explore cadvisor from deployrr
+# TODO: explore DeUnhealth (auto-restart unhealthy containers)
 
 #version: "3.8"
 services:
