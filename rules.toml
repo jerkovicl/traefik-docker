@@ -18,16 +18,16 @@
     referrerPolicy = "same-origin"
     permissionsPolicy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), vr=()"
     [http.middlewares.secure-headers.headers.customResponseHeaders]
-      X-Robots-Tag = "none,noarchive,nosnippet,notranslate,noimageindex"
+      X-Robots-Tag = "none,noindex,nofollow,noarchive,nosnippet,notranslate,noimageindex"
       Content-Security-Policy = "frame-ancestors 'self' https://example.com"
       server = ""
     [http.middlewares.secure-headers.headers.customRequestHeaders]
       X-Forwarded-Proto = "https"
 
-  # Rate limiting — 100 avg / 50 burst per source IP to prevent abuse/DDoS
+  # Rate limiting — 200 avg / 200 burst per source IP to prevent abuse/DDoS
   [http.middlewares.rate-limit.rateLimit]
-    average = 100
-    burst = 50
+    average = 200
+    burst = 200
 
   # Nextcloud-specific security headers (relaxed CSP, no strict frame policy)
   [http.middlewares.nextcloud-headers.headers]
