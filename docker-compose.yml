@@ -175,10 +175,10 @@ services:
       - traefik_proxy
       - default
     depends_on:
-      authentik-postgresql:
+      postgresql:
         condition: service_healthy
     environment:
-      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
       AUTHENTIK_POSTGRESQL__NAME: authentik
       AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:?err}
@@ -222,11 +222,11 @@ services:
       - default
       - socket_proxy
     depends_on:
-      authentik-postgresql:
+      postgresql:
         condition: service_healthy
     environment:
       DOCKER_HOST: tcp://socket-proxy:2375
-      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
       AUTHENTIK_POSTGRESQL__NAME: authentik
       AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:?err}
@@ -239,9 +239,9 @@ services:
       - ${USERDIR}/docker/authentik/media:/media
       - ${USERDIR}/docker/authentik/templates:/templates
 
-  authentik-postgresql:
-    image: postgres:16-alpine
-    container_name: authentik-postgresql
+  postgresql:
+    image: postgres:18-alpine
+    container_name: postgresql
     restart: unless-stopped
     networks:
       - default
