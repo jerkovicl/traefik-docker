@@ -11,41 +11,53 @@ services:
 # Docker Socket Proxy - Security-enhanced access to Docker API for Traefik
 # Only exposes the minimal API endpoints Traefik needs (read-only containers/networks/etc)
   socket-proxy:
-    image: tecnativa/docker-socket-proxy
+    image: lscr.io/linuxserver/socket-proxy:latest
     container_name: socket-proxy
-    restart: always
+    restart: unless-stopped
     security_opt:
       - no-new-privileges:true
     networks:
       socket_proxy:
-    privileged: true
+    read_only: true
+    tmpfs:
+      - /run
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      # Allow only what Traefik needs — everything else is disabled (0)
-      CONTAINERS: 1
-      NETWORKS: 1
-      SERVICES: 1
-      TASKS: 1
-      INFO: 1
-      EVENTS: 1
-      PING: 1
-      POST: 0
-      BUILD: 0
-      COMMIT: 0
-      CONFIGS: 0
-      DISTRIBUTION: 0
-      EXEC: 0
-      GRPC: 0
-      IMAGES: 0
-      NODES: 0
-      PLUGINS: 0
-      SECRETS: 0
-      SESSION: 0
-      SWARM: 0
-      SYSTEM: 0
-      VERSION: 0
-      VOLUMES: 0
+      - LOG_LEVEL=warning
+      # Portainer control
+      - ALLOW_START=1
+      - ALLOW_STOP=1
+      - ALLOW_RESTARTS=1
+      # Granted by default
+      - EVENTS=1
+      - PING=1
+      - VERSION=1
+      # Security critical — keep disabled
+      - AUTH=0
+      - SECRETS=0
+      - POST=1
+      # Traefik needs
+      - CONTAINERS=1
+      - NETWORKS=1
+      - SERVICES=1
+      - TASKS=1
+      - INFO=1
+      # Portainer needs
+      - IMAGES=1
+      - VOLUMES=1
+      # Disabled
+      - BUILD=0
+      - COMMIT=0
+      - CONFIGS=0
+      - DISTRIBUTION=0
+      - EXEC=0
+      - NODES=0
+      - PLUGINS=0
+      - SESSION=0
+      - SWARM=0
+      - SYSTEM=0
+      - DISABLE_IPV6=0
 
 # Traefik Reverse Proxy
   traefik:
@@ -54,8 +66,7 @@ services:
     container_name: traefik
     security_opt:
       - no-new-privileges:true
-    restart: always
-    domainname: ${DOMAINNAME}
+    restart: unless-stopped
     # Static config via CLI args — replaces traefik.toml (traefik.toml kept as reference only).
     # Benefit: env vars can be expanded at runtime using {{env "VAR"}} syntax (e.g. ACME email).
     # Entrypoint architecture:
@@ -92,9 +103,10 @@ services:
       - "--entrypoints.web-internal.http.redirections.entrypoint.permanent=true"
       - "--entrypoints.web-internal.forwardedheaders.trustedips=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,127.0.0.1/32,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
       - "--entrypoints.websecure-internal.address=:443"
+      - "--entrypoints.websecure-internal.http.tls=true"
       - "--entrypoints.websecure-internal.http3=true"
       - "--entrypoints.websecure-internal.http.tls.certresolver=cloudflare"
-      - "--entrypoints.websecure-internal.http.tls.options=default@file"
+      - "--entrypoints.websecure-internal.http.tls.options=tls-opts@file"
       - "--entrypoints.websecure-internal.forwardedheaders.trustedips=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,127.0.0.1/32,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
       ## Entrypoints — external/internet (:81 → :444); router maps internet :443 → Traefik :444
       - "--entrypoints.web-external.address=:81"
@@ -103,16 +115,17 @@ services:
       - "--entrypoints.web-external.http.redirections.entrypoint.permanent=true"
       - "--entrypoints.web-external.forwardedheaders.trustedips=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,127.0.0.1/32,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
       - "--entrypoints.websecure-external.address=:444"
+      - "--entrypoints.websecure-external.http.tls=true"
       - "--entrypoints.websecure-external.http3=true"
       - "--entrypoints.websecure-external.http.tls.certresolver=cloudflare"
-      - "--entrypoints.websecure-external.http.tls.options=default@file"
+      - "--entrypoints.websecure-external.http.tls.options=tls-opts@file"
       - "--entrypoints.websecure-external.forwardedheaders.trustedips=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,127.0.0.1/32,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
       ## Monitor entrypoint for healthchecks
       - "--entrypoints.monitor.address=:8081"
       ## Providers
       - "--providers.providersthrottleduration=2s"
       - "--providers.file.watch=true"
-      - "--providers.file.filename=/etc/traefik/rules.toml"
+      - "--providers.file.directory=/rules"
       - "--providers.docker.endpoint=tcp://socket-proxy:2375"
       - "--providers.docker.network=traefik_proxy"
       - "--providers.docker.watch=true"
@@ -151,8 +164,9 @@ services:
       - "444:444/udp" # HTTP/3 (QUIC) external
     environment:
       # CF_API_EMAIL is referenced in the ACME command arg via {{env "CF_API_EMAIL"}}
+      # CF_DNS_API_TOKEN is loaded from Docker secret (create a scoped DNS token in Cloudflare dashboard)
       - CF_API_EMAIL=${CLOUDFLARE_EMAIL}
-      - CF_API_KEY=${CLOUDFLARE_API_KEY}
+      - CF_DNS_API_TOKEN_FILE=/run/secrets/cf_dns_api_token
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.traefik-rtr.rule=Host(`traefik.${DOMAINNAME}`)"
@@ -161,10 +175,13 @@ services:
       - "traefik.http.routers.traefik-rtr.service=api@internal"
       - "traefik.http.routers.traefik-rtr.middlewares=secured@file"
       - "traefik.docker.network=traefik_proxy"
+    secrets:
+      - cf_dns_api_token
     volumes:
       # Only mount the files Traefik actually needs — traefik.toml is NOT mounted
       # (static config is now in the command: section above)
-      - ${USERDIR}/docker/traefik/rules.toml:/etc/traefik/rules.toml:ro
+      # NOTE: rules dir — on server run: mkdir -p ~/docker/traefik/rules && mv ~/docker/traefik/rules.toml ~/docker/traefik/rules/
+      - ${USERDIR}/docker/traefik/rules:/rules:ro
       - ${USERDIR}/docker/traefik/acme:/etc/traefik/acme
       - ${USERDIR}/docker/shared:/shared
       - /var/log/docker:/var/log/docker # for fail2ban - make sure to touch file before starting container
@@ -216,14 +233,14 @@ services:
       - "traefik.http.routers.authentik-rtr.entrypoints=websecure-internal,websecure-external"
       - "traefik.http.routers.authentik-rtr.tls=true"
       - "traefik.http.routers.authentik-rtr.tls.certresolver=dns-cloudflare"
-      - "traefik.http.routers.authentik-rtr.middlewares=secure-headers@file"
+      - "traefik.http.routers.authentik-rtr.middlewares=middlewares-secure-headers@file"
       - "traefik.http.routers.authentik-rtr.service=authentik-svc"
       # Catch-all outpost router — intercepts /outpost.goauthentik.io/ on ALL subdomains for forward auth
       - "traefik.http.routers.authentik-output-rtr.rule=HostRegexp(`{subdomain:[a-z0-9-]+}.${DOMAINNAME}`) && PathPrefix(`/outpost.goauthentik.io/`)"
       - "traefik.http.routers.authentik-output-rtr.entrypoints=websecure-internal,websecure-external"
       - "traefik.http.routers.authentik-output-rtr.tls=true"
       - "traefik.http.routers.authentik-output-rtr.tls.certresolver=dns-cloudflare"
-      - "traefik.http.routers.authentik-output-rtr.middlewares=secure-headers@file"
+      - "traefik.http.routers.authentik-output-rtr.middlewares=middlewares-secure-headers@file"
       - "traefik.http.routers.authentik-output-rtr.service=authentik-svc"
       # Service definition (shared by both routers)
       - "traefik.http.services.authentik-svc.loadbalancer.server.port=9000"
@@ -869,7 +886,7 @@ services:
       - "traefik.http.routers.jellyfin.rule=Host(`jellyfin.${DOMAINNAME}`)"
       - "traefik.http.routers.jellyfin.entrypoints=websecure-internal,websecure-external"
       - "traefik.http.routers.jellyfin.tls=true"
-      - "traefik.http.routers.jellyfin.middlewares=secure-headers@file"
+      - "traefik.http.routers.jellyfin.middlewares=middlewares-secure-headers@file"
       - "traefik.http.services.jellyfin.loadbalancer.server.port=8096"
       - "traefik.docker.network=traefik_proxy"
 
@@ -1324,7 +1341,7 @@ services:
       - "traefik.http.routers.bitwarden.rule=Host(`bitwarden.${DOMAINNAME}`)"
       - "traefik.http.routers.bitwarden.entrypoints=websecure-internal,websecure-external"
       - "traefik.http.routers.bitwarden.tls=true"
-      - "traefik.http.routers.bitwarden.middlewares=secure-headers@file"
+      - "traefik.http.routers.bitwarden.middlewares=middlewares-secure-headers@file"
       - "traefik.http.services.bitwarden.loadbalancer.server.port=80"
       - "traefik.docker.network=traefik_proxy"
 
@@ -1537,7 +1554,7 @@ services:
       - "traefik.http.routers.nginx-file-browser.rule=Host(`file-server.${DOMAINNAME}`)"
       - "traefik.http.routers.nginx-file-browser.entrypoints=websecure-internal,websecure-external"
       - "traefik.http.routers.nginx-file-browser.tls=true"
-      - "traefik.http.routers.nginx-file-browser.middlewares=secure-headers@file"
+      - "traefik.http.routers.nginx-file-browser.middlewares=middlewares-secure-headers@file"
       - "traefik.http.services.nginx-file-browser.loadbalancer.server.port=80"
       - "traefik.docker.network=traefik_proxy"
 
@@ -1863,7 +1880,7 @@ services:
       - "traefik.http.routers.api-gateway.rule=Host(`notes.${DOMAINNAME}`)"
       - "traefik.http.routers.api-gateway.entrypoints=websecure-internal,websecure-external"
       - "traefik.http.routers.api-gateway.tls=true"
-      - "traefik.http.routers.api-gateway.middlewares=secure-headers@file"
+      - "traefik.http.routers.api-gateway.middlewares=middlewares-secure-headers@file"
       - "traefik.http.services.api-gateway.loadbalancer.server.port=3000"
       - "traefik.docker.network=traefik_proxy"
 
@@ -1965,7 +1982,7 @@ services:
       - "traefik.http.routers.snext.rule=Host(`notes-ext.${DOMAINNAME}`)"
       - "traefik.http.routers.snext.entrypoints=websecure-internal,websecure-external"
       - "traefik.http.routers.snext.tls=true"
-      - "traefik.http.routers.snext.middlewares=secure-headers@file"
+      - "traefik.http.routers.snext.middlewares=middlewares-secure-headers@file"
       - "traefik.http.services.snext.loadbalancer.server.port=80"
       - "traefik.docker.network=traefik_proxy"
     
@@ -2010,7 +2027,7 @@ services:
       - "traefik.http.routers.snweb.rule=Host(`notes-web.${DOMAINNAME}`)"
       - "traefik.http.routers.snweb.entrypoints=websecure-internal,websecure-external"
       - "traefik.http.routers.snweb.tls=true"
-      - "traefik.http.routers.snweb.middlewares=secure-headers@file"
+      - "traefik.http.routers.snweb.middlewares=middlewares-secure-headers@file"
       - "traefik.http.services.snweb.loadbalancer.server.port=3001"
       - "traefik.docker.network=traefik_proxy"
 
@@ -2235,7 +2252,7 @@ services:
       - "traefik.http.routers.headscale.rule=Host(`headscale.${DOMAINNAME}`)"
       - "traefik.http.routers.headscale.entrypoints=websecure-internal,websecure-external"
       - "traefik.http.routers.headscale.tls=true"
-      - "traefik.http.routers.headscale.middlewares=secure-headers@file"
+      - "traefik.http.routers.headscale.middlewares=middlewares-secure-headers@file"
       - "traefik.http.services.headscale.loadbalancer.server.port=8080"
       - "traefik.docker.network=traefik_proxy"
 
@@ -2335,3 +2352,9 @@ networks:
     internal: true
   default:
       driver: bridge
+
+secrets:
+  # Create a scoped Cloudflare DNS API token (Zone → DNS → Edit) and save to this file:
+  # mkdir -p ~/docker/secrets && echo "your_token_here" > ~/docker/secrets/cf_dns_api_token && chmod 600 ~/docker/secrets/cf_dns_api_token
+  cf_dns_api_token:
+    file: ${USERDIR}/docker/secrets/cf_dns_api_token

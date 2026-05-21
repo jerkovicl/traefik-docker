@@ -4,7 +4,7 @@
 [http.middlewares]
 
   # Security headers applied to all exposed services
-  [http.middlewares.secure-headers.headers]
+  [http.middlewares.middlewares-secure-headers.headers]
     accessControlAllowMethods = ["GET", "OPTIONS", "PUT"]
     accessControlMaxAge = 100
     hostsProxyHeaders = ["X-Forwarded-Host"]
@@ -17,17 +17,28 @@
     customFrameOptionsValue = "SAMEORIGIN"
     referrerPolicy = "same-origin"
     permissionsPolicy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), vr=()"
-    [http.middlewares.secure-headers.headers.customResponseHeaders]
+    [http.middlewares.middlewares-secure-headers.headers.customResponseHeaders]
       X-Robots-Tag = "none,noindex,nofollow,noarchive,nosnippet,notranslate,noimageindex"
       Content-Security-Policy = "frame-ancestors 'self' https://example.com"
       server = ""
-    [http.middlewares.secure-headers.headers.customRequestHeaders]
+    [http.middlewares.middlewares-secure-headers.headers.customRequestHeaders]
       X-Forwarded-Proto = "https"
 
   # Rate limiting — 200 avg / 200 burst per source IP to prevent abuse/DDoS
-  [http.middlewares.rate-limit.rateLimit]
+  [http.middlewares.middlewares-rate-limit.rateLimit]
     average = 200
     burst = 200
+
+  # Compression — reduces bandwidth for text/json/html responses
+  [http.middlewares.middlewares-compress.compress]
+
+  # Buffering — protects against slow uploads; allows retry on network errors
+  [http.middlewares.middlewares-buffering.buffering]
+    maxResponseBodyBytes = 2000000
+    maxRequestBodyBytes = 10485760
+    memRequestBodyBytes = 2097152
+    memResponseBodyBytes = 2097152
+    retryExpression = "IsNetworkError() && Attempts() <= 2"
 
   # Nextcloud-specific security headers (relaxed CSP, no strict frame policy)
   [http.middlewares.nextcloud-headers.headers]
@@ -83,19 +94,19 @@
 
   # No-auth chain: geoblock + rate-limit + security headers (used by bypass routers for mobile app access)
   [http.middlewares.chain-no-auth.chain]
-    middlewares = ["middlewares-geoblock", "rate-limit", "secure-headers"]
+    middlewares = ["middlewares-geoblock", "middlewares-rate-limit", "middlewares-secure-headers"]
 
   # Authentik middleware chain: geoblock + rate-limit + security headers + authentik SSO
   [http.middlewares.chain-authentik.chain]
-    middlewares = ["middlewares-geoblock", "rate-limit", "secure-headers", "middlewares-authentik"]
+    middlewares = ["middlewares-geoblock", "middlewares-rate-limit", "middlewares-secure-headers", "middlewares-authentik"]
 
   # Combined middleware chain (alias for chain-authentik — used by services via secured@file label)
   [http.middlewares.secured.chain]
-    middlewares = ["middlewares-geoblock", "rate-limit", "secure-headers", "middlewares-authentik"]
+    middlewares = ["middlewares-geoblock", "middlewares-rate-limit", "middlewares-secure-headers", "middlewares-authentik"]
 
 # Global TLS options (dynamic config — must NOT be in traefik.toml)
 # Only GCM ciphers retained — CBC variants removed (weaker, not used by TLS 1.3)
-[tls.options.default]
+[tls.options.tls-opts]
   minVersion = "VersionTLS12"
   sniStrict = true
   cipherSuites = [
@@ -118,7 +129,7 @@
     rule = "Host(`hassio.example.com`)"
     service = "backend-hassio"
     entryPoints = ["websecure-internal"]
-    middlewares = ["secure-headers@file"]
+    middlewares = ["middlewares-secure-headers@file"]
     [http.routers.hassio.tls]
 
 [http.services]
