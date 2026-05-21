@@ -2,8 +2,7 @@
 #Requirement: nano .env -> Set environmental variables: ${$USERDIR}, ${PUID}, ${PGID}, ${TZ}, ${DOMAINNAME}, ${CLOUDFLARE_EMAIL},  ${CLOUDFLARE_API_KEY}, ${HTTP_USERNAME}, ${HTTP_PASSWORD}, ${PLEX_CLAIM} etc. as explained in the reference.
 
 # healthchecks TODO: traefik keycloak syncing-server-js auth 
-# TODO: explore cadvisor from deployrr
-# TODO: explore DeUnhealth (auto-restart unhealthy containers)
+# TODO: explore cadvisor, DeUnhealth, dockhand from deployrr
 
 #version: "3.8"
 services:
