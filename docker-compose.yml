@@ -47,6 +47,8 @@ services:
       # Portainer needs
       - IMAGES=1
       - VOLUMES=1
+      # Dozzle needs
+      - LOGS=1
       # Disabled
       - BUILD=0
       - COMMIT=0
@@ -432,17 +434,22 @@ services:
   dozzle:
     container_name: dozzle
     image: amir20/dozzle:latest
-    restart: always
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
-      - DOZZLE_TAILSIZE=100
+      # Use socket-proxy instead of mounting docker.sock directly
+      - DOCKER_HOST=tcp://socket-proxy:2375
       - DOZZLE_LEVEL=info
+      # Delegate auth to Authentik via forward-proxy (secured@file chain handles it)
+      - DOZZLE_AUTH_PROVIDER=forward-proxy
+      - DOZZLE_HOSTNAME=${DOMAINNAME}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /etc/localtime:/etc/localtime:ro
-    #ports:
-    # - 9999:8080
+      # Persists notification settings across restarts
+      - ${USERDIR}/docker/dozzle:/data
     networks:
       - traefik_proxy
+      - socket_proxy
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.dozzle.rule=Host(`dozzle.${DOMAINNAME}`)"
