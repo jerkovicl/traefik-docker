@@ -293,12 +293,16 @@ services:
   #https://hub.docker.com/r/ldez/traefik-certs-dumper
   certsdump:
     container_name: certsdump
-    image: ldez/traefik-certs-dumper
-    command: file --source /acme.json --dest /dump/live --domain-subdir --crt-name=fullchain --key-name=privkey --crt-ext=.pem --key-ext=.pem
+    image: ldez/traefik-certs-dumper:v2.11.2
+    # --watch keeps the process running and re-dumps whenever acme.json changes
+    # (i.e. on every LE cert renewal, ~every 60 days). Without --watch, renewed
+    # certs would never be written to disk and services would eventually serve
+    # expired certificates.
+    command: file --watch --source /acme.json --dest /dump/live --domain-subdir --crt-name=fullchain --key-name=privkey --crt-ext=.pem --key-ext=.pem
     volumes:
       - ${USERDIR}/docker/traefik/acme/acme.json:/acme.json:ro
       - ${USERDIR}/docker/shared/letsencrypt/etc:/dump
-    restart: "no"
+    restart: unless-stopped
 
 ######### DOWNLOADERS ##########
 
@@ -1018,9 +1022,8 @@ services:
       - ${USERDIR}/docker/nextcloud:/config
       - ${USERDIR}/shared_data:/data
       - ${USERDIR}/docker/shared:/shared
-      # Mount LE wildcard cert (dumped by certsdump from acme.json) so nginx inside
-      # Nextcloud uses a publicly trusted cert — allows Traefik to verify it without
-      # insecureSkipVerify. Adjust the domain subdir to match your DOMAINNAME.
+      # Use the LE wildcard cert dumped by certsdump — nginx inside Nextcloud picks
+      # these up automatically. /shared is already mounted so no extra host path needed.
       - ${USERDIR}/docker/shared/letsencrypt/etc/live/${DOMAINNAME}/fullchain.pem:/config/keys/cert.crt:ro
       - ${USERDIR}/docker/shared/letsencrypt/etc/live/${DOMAINNAME}/privkey.pem:/config/keys/cert.key:ro
 #    ports:
