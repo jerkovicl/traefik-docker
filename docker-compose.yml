@@ -203,6 +203,12 @@ services:
     volumes:
       - ${USERDIR}/docker/authentik/media:/media
       - ${USERDIR}/docker/authentik/templates:/templates
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      start_period: 60s
+      interval: 30s
+      retries: 5
+      timeout: 5s
     labels:
       - "traefik.enable=true"
       # Main router — admin & login UI
@@ -251,6 +257,12 @@ services:
     volumes:
       - ${USERDIR}/docker/authentik/media:/media
       - ${USERDIR}/docker/authentik/templates:/templates
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      start_period: 60s
+      interval: 30s
+      retries: 5
+      timeout: 5s
 
   postgresql:
     image: postgres:18-alpine
