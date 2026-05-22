@@ -83,7 +83,6 @@ services:
       - "--global.checkNewVersion=true"
       - "--global.sendAnonymousUsage=false"
       ## Logging
-      - "--log=true"
       - "--log.level=ERROR"
       - "--log.filepath=/var/log/traefik/traefik.log"
       - "--accesslog=true"
