@@ -1,14 +1,138 @@
-[backends]
-  [backends.backend-hassio]
-    [backends.backend-hassio.servers]
-      [backends.backend-hassio.servers.server-hassio-ext]
-        url = "http://LAN-IP:8123"
-        weight = 0
+# Traefik v3 dynamic configuration
+# Shared middlewares and external service routes
 
-[frontends]
-  [frontends.frontend-hassio]
-    backend = "backend-hassio"
-    passHostHeader = true
-    [frontends.frontend-hassio.routes]
-          [frontends.frontend-hassio.routes.route-hassio-ext]
-        rule = "Host:hassio.example.com"
+[http.middlewares]
+
+  # Security headers applied to all exposed services
+  [http.middlewares.middlewares-secure-headers.headers]
+    accessControlAllowMethods = ["GET", "OPTIONS", "PUT"]
+    accessControlMaxAge = 100
+    hostsProxyHeaders = ["X-Forwarded-Host"]
+    browserXssFilter = true
+    contentTypeNosniff = true
+    forceSTSHeader = true
+    stsSeconds = 63072000
+    stsIncludeSubdomains = true
+    stsPreload = true
+    customFrameOptionsValue = "SAMEORIGIN"
+    referrerPolicy = "same-origin"
+    permissionsPolicy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), vr=()"
+    [http.middlewares.middlewares-secure-headers.headers.customResponseHeaders]
+      X-Robots-Tag = "none,noindex,nofollow,noarchive,nosnippet,notranslate,noimageindex"
+      Content-Security-Policy = "frame-ancestors 'self' https://example.com"
+      server = ""
+    [http.middlewares.middlewares-secure-headers.headers.customRequestHeaders]
+      X-Forwarded-Proto = "https"
+
+  # Rate limiting — 200 avg / 200 burst per source IP to prevent abuse/DDoS
+  [http.middlewares.middlewares-rate-limit.rateLimit]
+    average = 200
+    burst = 200
+
+  # Compression — reduces bandwidth for text/json/html responses
+  [http.middlewares.middlewares-compress.compress]
+
+  # Buffering — protects against slow uploads; allows retry on network errors
+  [http.middlewares.middlewares-buffering.buffering]
+    maxResponseBodyBytes = 2000000
+    maxRequestBodyBytes = 10485760
+    memRequestBodyBytes = 2097152
+    memResponseBodyBytes = 2097152
+    retryExpression = "IsNetworkError() && Attempts() <= 2"
+
+  # Nextcloud-specific security headers (relaxed CSP, no strict frame policy)
+  [http.middlewares.nextcloud-headers.headers]
+    browserXssFilter = true
+    contentTypeNosniff = true
+    forceSTSHeader = true
+    stsSeconds = 63072000
+    stsIncludeSubdomains = true
+    stsPreload = true
+    referrerPolicy = "no-referrer"
+    customFrameOptionsValue = "SAMEORIGIN"
+    [http.middlewares.nextcloud-headers.headers.customResponseHeaders]
+      X-Robots-Tag = "noindex,nofollow"
+      server = ""
+
+  # Redirect Nextcloud CalDAV/CardDAV .well-known discovery URLs
+  [http.middlewares.nextcloud-redirect.redirectRegex]
+    permanent = true
+    regex = "https://(.*)/.well-known/(card|cal)dav"
+    replacement = "https://${1}/remote.php/dav/"
+
+  # SSO forward-auth middleware via Authentik embedded outpost
+  [http.middlewares.middlewares-authentik.forwardAuth]
+    address = "http://authentik:9000/outpost.goauthentik.io/auth/traefik"
+    trustForwardHeader = true
+    authResponseHeaders = [
+      "X-authentik-username",
+      "X-authentik-groups",
+      "X-authentik-email",
+      "X-authentik-name",
+      "X-authentik-uid",
+      "X-authentik-jwt",
+      "X-authentik-meta-jwks",
+      "X-authentik-meta-outpost",
+      "X-authentik-meta-provider",
+      "X-authentik-meta-app",
+      "X-authentik-meta-version"
+    ]
+
+  # Geoblock: allow traffic only from specified countries + private IP ranges
+  # DB file: download from https://github.com/nscuro/traefik-plugin-geoblock/releases/download/v0.14.0/IP2LOCATION-LITE-DB1.IPV6.BIN
+  # Place at: ~/docker/traefik/plugins/IP2LOCATION-LITE-DB1.IPV6.BIN
+  # Add countries you access from (ISO 3166-1 alpha-2 codes)
+  [http.middlewares.middlewares-geoblock.plugin.geoblock]
+    enabled = true
+    databaseFilePath = "/plugins-local/IP2LOCATION-LITE-DB1.IPV6.BIN"
+    allowedCountries = ["HR", "ES"]
+    blockedCountries = []
+    defaultAllow = false
+    allowPrivate = true
+    disallowedStatusCode = 403
+    allowedIPBlocks = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+
+  # No-auth chain: geoblock + rate-limit + security headers (used by bypass routers for mobile app access)
+  [http.middlewares.chain-no-auth.chain]
+    middlewares = ["middlewares-geoblock", "middlewares-rate-limit", "middlewares-secure-headers"]
+
+  # Authentik middleware chain: geoblock + rate-limit + security headers + authentik SSO
+  [http.middlewares.chain-authentik.chain]
+    middlewares = ["middlewares-geoblock", "middlewares-rate-limit", "middlewares-secure-headers", "middlewares-authentik"]
+
+  # Combined middleware chain (alias for chain-authentik — used by services via secured@file label)
+  [http.middlewares.secured.chain]
+    middlewares = ["middlewares-geoblock", "middlewares-rate-limit", "middlewares-secure-headers", "middlewares-authentik"]
+
+# Global TLS options (dynamic config — must NOT be in traefik.toml)
+# Only GCM ciphers retained — CBC variants removed (weaker, not used by TLS 1.3)
+[tls.options.tls-opts]
+  minVersion = "VersionTLS12"
+  sniStrict = true
+  cipherSuites = [
+    "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+    "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+    "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+    "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+    "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305",
+    "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305",
+    "TLS_AES_128_GCM_SHA256",
+    "TLS_AES_256_GCM_SHA384",
+    "TLS_CHACHA20_POLY1305_SHA256",
+    "TLS_FALLBACK_SCSV"
+  ]
+  curvePreferences = ["CurveP521", "CurveP384"]
+
+# External (non-Docker) service routes
+[http.routers]
+  [http.routers.hassio]
+    rule = "Host(`hassio.example.com`)"
+    service = "backend-hassio"
+    entryPoints = ["websecure-internal"]
+    middlewares = ["middlewares-secure-headers@file"]
+    [http.routers.hassio.tls]
+
+[http.services]
+  [http.services.backend-hassio.loadBalancer]
+    [[http.services.backend-hassio.loadBalancer.servers]]
+      url = "http://LAN-IP:8123"

@@ -1,202 +1,338 @@
 #Reference: https://www.smarthomebeginner.com/traefik-reverse-proxy-tutorial-for-docker
-#Requirement: nano .env -> Set environmental variables: ${$USERDIR}, ${PUID}, ${PGID}, ${TZ}, ${DOMAINNAME}, ${CLOUDFLARE_EMAIL},  ${CLOUDFLARE_API_KEY}, ${HTTP_USERNAME}, ${HTTP_PASSWORD}, ${PLEX_CLAIM} etc. as explained in the reference.
+#Requirement: nano .env -> Set environment variables such as ${USERDIR}, ${PUID}, ${PGID}, ${TZ}, ${DOMAINNAME}, ${HTTP_USERNAME}, ${HTTP_PASSWORD}, ${PLEX_CLAIM}, etc. as explained in the reference.
+#Cloudflare DNS challenge: Traefik v3 uses CF_DNS_API_TOKEN_FILE together with the `cf_dns_api_token` secret; do not use legacy CLOUDFLARE_EMAIL or CLOUDFLARE_API_KEY values.
 
 # healthchecks TODO: traefik keycloak syncing-server-js auth 
+# TODO: explore cadvisor, DeUnhealth, dockhand, FreshRSS from deployrr
 
 #version: "3.8"
 services:
 
 ######### FRONTENDS ##########
 
+# Docker Socket Proxy - Security-enhanced access to Docker API for Traefik
+# Only exposes the minimal API endpoints Traefik needs (read-only containers/networks/etc)
+  socket-proxy:
+    image: lscr.io/linuxserver/socket-proxy:latest
+    container_name: socket-proxy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      socket_proxy:
+    read_only: true
+    tmpfs:
+      - /run
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - LOG_LEVEL=warning
+      # Portainer control
+      - ALLOW_START=1
+      - ALLOW_STOP=1
+      - ALLOW_RESTARTS=1
+      # Granted by default
+      - EVENTS=1
+      - PING=1
+      - VERSION=1
+      # Security critical — keep disabled
+      - AUTH=0
+      - SECRETS=0
+      - POST=1
+      # Traefik needs
+      - CONTAINERS=1
+      - NETWORKS=1
+      - SERVICES=1
+      - TASKS=1
+      - INFO=1
+      # Portainer needs
+      - IMAGES=1
+      - VOLUMES=1
+      # Dozzle needs
+      - LOGS=1
+      # Disabled
+      - BUILD=0
+      - COMMIT=0
+      - CONFIGS=0
+      - DISTRIBUTION=0
+      - EXEC=0
+      - NODES=0
+      - PLUGINS=0
+      - SESSION=0
+      - SWARM=0
+      - SYSTEM=0
+      - DISABLE_IPV6=0
+
 # Traefik Reverse Proxy
   traefik:
     hostname: traefik
-    image: traefik:v1.7.21
+    image: traefik:v3.7.1
     container_name: traefik
-    restart: always
-    domainname: ${DOMAINNAME}
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    # Static config via CLI args — replaces traefik.toml (traefik.toml kept as reference only).
+    # Benefit: env vars can be expanded at runtime using {{env "VAR"}} syntax (e.g. ACME email).
+    # Entrypoint architecture:
+    #   web          :80  → redirects to websecure  (LAN only)
+    #   web-external :81  → redirects to websecure-external (internet)
+    #   websecure    :443 → LAN-only HTTPS (router does NOT forward external :443 here)
+    #   websecure-external :444 → external HTTPS (router: internet :443 → Traefik :444)
+    #   monitor      :8081 → healthcheck/ping
+    command:
+      ## Global
+      - "--global.checkNewVersion=true"
+      - "--global.sendAnonymousUsage=false"
+      ## Logging
+      - "--log.level=ERROR"
+      - "--log.filepath=/var/log/traefik/traefik.log"
+      - "--accesslog=true"
+      - "--accesslog.filepath=/var/log/traefik/access.log"
+      - "--accesslog.format=json"
+      - "--accesslog.bufferingsize=100"
+      - "--accesslog.filters.statuscodes=204-299,400-499,500-599"
+      - "--accesslog.filters.retryattempts=true"
+      - "--accesslog.filters.minduration=10ms"
+      ## API / Dashboard
+      - "--api.dashboard=true"
+      - "--api.insecure=false"
+      ## Ping / healthcheck (monitor entrypoint)
+      - "--ping=true"
+      - "--ping.entrypoint=monitor"
+      ## Entrypoints — internal LAN (:80 → :443)
+      - "--entrypoints.web-internal.address=:80"
+      - "--entrypoints.web-internal.http.redirections.entrypoint.to=websecure-internal"
+      - "--entrypoints.web-internal.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web-internal.http.redirections.entrypoint.permanent=true"
+      - "--entrypoints.web-internal.forwardedheaders.trustedips=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,127.0.0.1/32,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
+      - "--entrypoints.websecure-internal.address=:443"
+      - "--entrypoints.websecure-internal.http.tls=true"
+      - "--entrypoints.websecure-internal.http3=true"
+      - "--entrypoints.websecure-internal.http.tls.certresolver=cloudflare"
+      - "--entrypoints.websecure-internal.http.tls.options=tls-opts@file"
+      - "--entrypoints.websecure-internal.forwardedheaders.trustedips=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,127.0.0.1/32,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
+      ## Entrypoints — external/internet (:81 → :444); router maps internet :443 → Traefik :444
+      - "--entrypoints.web-external.address=:81"
+      - "--entrypoints.web-external.http.redirections.entrypoint.to=websecure-external"
+      - "--entrypoints.web-external.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web-external.http.redirections.entrypoint.permanent=true"
+      - "--entrypoints.web-external.forwardedheaders.trustedips=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,127.0.0.1/32,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
+      - "--entrypoints.websecure-external.address=:444"
+      - "--entrypoints.websecure-external.http.tls=true"
+      - "--entrypoints.websecure-external.http3=true"
+      - "--entrypoints.websecure-external.http.tls.certresolver=cloudflare"
+      - "--entrypoints.websecure-external.http.tls.options=tls-opts@file"
+      - "--entrypoints.websecure-external.forwardedheaders.trustedips=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,127.0.0.1/32,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12"
+      ## Monitor entrypoint for healthchecks
+      - "--entrypoints.monitor.address=:8081"
+      ## Providers
+      - "--providers.providersthrottleduration=2s"
+      - "--providers.file.watch=true"
+      - "--providers.file.directory=/rules"
+      - "--providers.docker.endpoint=tcp://socket-proxy:2375"
+      - "--providers.docker.network=traefik_proxy"
+      - "--providers.docker.watch=true"
+      - "--providers.docker.exposedbydefault=false"
+      ## ACME / Let's Encrypt via Cloudflare DNS challenge
+      ## {{env "CF_API_EMAIL"}} is resolved at runtime from the container env var below
+      - "--certificatesresolvers.cloudflare.acme.email={{env \"CF_API_EMAIL\"}}"
+      - "--certificatesresolvers.cloudflare.acme.storage=/etc/traefik/acme/acme.json"
+      # Uncomment to test against staging CA (avoids LE rate limits):
+      # - "--certificatesresolvers.cloudflare.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
+      - "--certificatesresolvers.cloudflare.acme.dnschallenge.provider=cloudflare"
+      - "--certificatesresolvers.cloudflare.acme.dnschallenge.resolvers=1.1.1.1:53,1.0.0.1:53"
+      - "--certificatesresolvers.cloudflare.acme.dnschallenge.propagation.delaybeforechecks=120"
+      - "--certificatesresolvers.cloudflare.acme.domains[0].main=${DOMAINNAME}"
+      - "--certificatesresolvers.cloudflare.acme.domains[0].sans=*.${DOMAINNAME}"
+      ## Plugins — loaded at startup; requires full container restart (not just up -d) when changed
+      # Geoblock: block traffic from countries not in allowedCountries list (rules.toml)
+      - "--experimental.plugins.geoblock.modulename=github.com/nscuro/traefik-plugin-geoblock"
+      - "--experimental.plugins.geoblock.version=v0.14.0"
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       - default
       - traefik_proxy
+      - socket_proxy
     ports:
       - "80:80"
       - "443:443"
-#     - "XXXX:8080"
+      - "443:443/udp" # HTTP/3 (QUIC)
+      - "81:81"       # external HTTP redirect (router maps internet :80 → here)
+      - "444:444"     # external HTTPS (router maps internet :443 → here)
+      - "444:444/udp" # HTTP/3 (QUIC) external
     environment:
+      # CF_API_EMAIL is referenced in the ACME command arg via {{env "CF_API_EMAIL"}}
+      # CF_DNS_API_TOKEN is loaded from Docker secret (create a scoped DNS token in Cloudflare dashboard)
       - CF_API_EMAIL=${CLOUDFLARE_EMAIL}
-      - CF_API_KEY=${CLOUDFLARE_API_KEY}
+      - CF_DNS_API_TOKEN_FILE=/run/secrets/cf_dns_api_token
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=traefik"
-      - "traefik.frontend.rule=Host:traefik.${DOMAINNAME}"  
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /traefik"
-      - "traefik.port=8080"
+      - "traefik.http.routers.traefik-rtr.rule=Host(`traefik.${DOMAINNAME}`)"
+      - "traefik.http.routers.traefik-rtr.entrypoints=websecure-internal"
+      - "traefik.http.routers.traefik-rtr.tls=true"
+      - "traefik.http.routers.traefik-rtr.service=api@internal"
+      - "traefik.http.routers.traefik-rtr.middlewares=secured@file"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=traefik.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      #- "traefik.frontend.auth.basic.users=${HTTP_USERNAME}:${HTTP_PASSWORD}"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
+    secrets:
+      - cf_dns_api_token
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ${USERDIR}/docker/traefik:/etc/traefik
+      # Only mount the files Traefik actually needs — traefik.toml is NOT mounted
+      # (static config is now in the command: section above)
+      # NOTE: rules dir — on server run: mkdir -p ~/docker/traefik/rules && mv ~/docker/traefik/rules.toml ~/docker/traefik/rules/
+      - ${USERDIR}/docker/traefik/rules:/rules:ro
+      - ${USERDIR}/docker/traefik/acme:/etc/traefik/acme
       - ${USERDIR}/docker/shared:/shared
       - /var/log/docker:/var/log/docker # for fail2ban - make sure to touch file before starting container
+      - ${USERDIR}/docker/traefik/logs:/var/log/traefik # access logs
+      - ${USERDIR}/docker/traefik/plugins:/plugins-local # Geoblock IP2Location database
+    depends_on:
+      socket-proxy:
+        condition: service_started
 
-# The auth gate for SSO
-  traefik-forward-auth:
-    image: thomseddon/traefik-forward-auth
-    #image: funkypenguin/traefik-forward-auth
-    container_name: traefik-forward-auth
+# ========== AUTHENTIK - Identity Provider & SSO (replaces Keycloak + traefik-forward-auth) ==========
+# NOTE: Add AUTHENTIK_DB_PASSWORD and AUTHENTIK_SECRET_KEY to your .env file
+# Initial setup: visit https://authentik.YOURDOMAIN/if/flow/initial-setup/ after first start
+  authentik:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION:-2025.12.1}
+    container_name: authentik
     restart: unless-stopped
-    dns:
-      - 127.0.0.1
-      # Sets a backup server of your choosing in case DNSMasq has problems starting
-      - 1.1.1.1
+    security_opt:
+      - no-new-privileges:true
+    command: server
     networks:
       - traefik_proxy
-      #- keycloak
+      - default
+    depends_on:
+      postgresql:
+        condition: service_healthy
     environment:
-        DEFAULT_PROVIDER: oidc
-        # This is based on using the Master realm. Create a new client, this will go into your CLIENT_ID, CLIENT_SECRET details.
-        PROVIDERS_OIDC_ISSUER_URL: https://keycloak.${DOMAINNAME}/auth/realms/master
-        PROVIDERS_OIDC_CLIENT_ID: ${AUTH_CLIENT_ID}
-        PROVIDERS_OIDC_CLIENT_SECRET: ${AUTH_CLIENT_SECRET}
-        SECRET: ${HTTP_PASSWORD}
-        AUTH_HOST: auth.${DOMAINNAME}
-        INSECURE_COOKIE: false
-        COOKIE_DOMAIN: ${DOMAINNAME}
-        LIFETIME: "2592000"
-        URL_PATH: /_oauth
-        CONFIG: "/rules/rules.ini"
-        LOG_LEVEL: debug # trace|debug|info|warn|error|fatal|panic
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:?err}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?err}
+      AUTHENTIK_LOG_LEVEL: info
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "false"
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
     volumes:
-      - ${USERDIR}/docker/traefik-forward-auth/rules:/rules
+      - ${USERDIR}/docker/authentik/media:/media
+      - ${USERDIR}/docker/authentik/templates:/templates
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      start_period: 60s
+      interval: 30s
+      retries: 5
+      timeout: 5s
     labels:
       - "traefik.enable=true"
-      - "traefik.port=4181"
-      - "traefik.frontend.rule=Host:auth.${DOMAINNAME}"
-      - "traefik.backend=traefik-forward-auth"
+      # Main router — admin & login UI
+      - "traefik.http.routers.authentik-rtr.rule=Host(`authentik.${DOMAINNAME}`)"
+      - "traefik.http.routers.authentik-rtr.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.authentik-rtr.tls=true"
+      - "traefik.http.routers.authentik-rtr.tls.certresolver=dns-cloudflare"
+      - "traefik.http.routers.authentik-rtr.middlewares=middlewares-secure-headers@file"
+      - "traefik.http.routers.authentik-rtr.service=authentik-svc"
+      # Catch-all outpost router — intercepts /outpost.goauthentik.io/ on ALL subdomains for forward auth
+      - "traefik.http.routers.authentik-output-rtr.rule=HostRegexp(`{subdomain:[a-z0-9-]+}.${DOMAINNAME}`) && PathPrefix(`/outpost.goauthentik.io/`)"
+      - "traefik.http.routers.authentik-output-rtr.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.authentik-output-rtr.tls=true"
+      - "traefik.http.routers.authentik-output-rtr.tls.certresolver=dns-cloudflare"
+      - "traefik.http.routers.authentik-output-rtr.middlewares=middlewares-secure-headers@file"
+      - "traefik.http.routers.authentik-output-rtr.service=authentik-svc"
+      # Service definition (shared by both routers)
+      - "traefik.http.services.authentik-svc.loadbalancer.server.port=9000"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-    depends_on:
-      traefik:
-        condition: service_started #service_healthy
-      keycloak:
-        condition: service_started
 
-# Keycloak - identity and access management solution
-  keycloak:
-    image: jboss/keycloak
-    container_name: keycloak
-    domainname: ${DOMAINNAME}
-    restart: always
-#    ports:
-#      - "8080:8080"
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION:-2025.12.1}
+    container_name: authentik-worker
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command: worker
     networks:
       - traefik_proxy
-      - keycloak
-    volumes:
-#      - ${USERDIR}/docker/keycloak/config.json:/config.json
-      - /etc/timezone:/etc/timezone:ro
-      - /etc/localtime:/etc/localtime:ro
-      #- /var/log/docker/keycloak:/opt/jboss/keycloak/standalone/log
-    environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
-      - KEYCLOAK_USER=${KEYCLOAK_USER} # enable on startup only
-      - KEYCLOAK_PASSWORD=${KEYCLOAK_PASSWORD}
-#      - KEYCLOAK_IMPORT=/config.json
-      - DB_VENDOR=mariadb
-      - DB_DATABASE=keycloak
-      - DB_ADDR=mariadb
-      - DB_USER=keycloak
-      - DB_PASSWORD=${MYSQL_ROOT_PASSWORD}
-#     - JBOSS_LOG_DIR=/opt/wildfly/logs
-# This is required to run keycloak behind traefik
-      - PROXY_ADDRESS_FORWARDING=true
-      - KEYCLOAK_HOSTNAME=keycloak.${DOMAINNAME}
-# Tell MYSQL what user/password to create
-      - MYSQL_USER=keycloak
-      - MYSQL_PASSWORD=${MYSQL_ROOT_PASSWORD}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=traefik_proxy"
-      - "traefik.backend=keycloak"
-      - "traefik.frontend.rule=Host:keycloak.${DOMAINNAME}"
-#      - "traefik.protocol: http"
-      - "traefik.port=8080"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=keycloak.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
+      - default
+      - socket_proxy
     depends_on:
-      mariadb:
-        condition: service_started
+      postgresql:
+        condition: service_healthy
+    environment:
+      DOCKER_HOST: tcp://socket-proxy:2375
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:?err}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?err}
+      AUTHENTIK_LOG_LEVEL: info
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "false"
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+    volumes:
+      - ${USERDIR}/docker/authentik/media:/media
+      - ${USERDIR}/docker/authentik/templates:/templates
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      start_period: 60s
+      interval: 30s
+      retries: 5
+      timeout: 5s
+
+  postgresql:
+    image: postgres:18-alpine
+    container_name: postgresql
+    restart: unless-stopped
+    networks:
+      - default
+    environment:
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD:?err}
+      POSTGRES_DB: authentik
+    volumes:
+      - ${USERDIR}/docker/postgresql:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+# REMOVED: keycloak (jboss/keycloak - deprecated image, replaced by Authentik above)
+# REMOVED: traefik-forward-auth (thomseddon - Authentik has built-in forward auth outpost)
  
  #Portainer - WebUI for Containers
  # reset password with https://docs.portainer.io/advanced/reset-admin, using this command docker run --rm -v ~/docker/portainer/data:/data portainer/helper-reset-password
   portainer:
     image: portainer/portainer-ee:latest
     container_name: portainer
-    restart: always
-    command: -H unix:///var/run/docker.sock
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command: -H tcp://socket-proxy:2375
 #    ports:
 #      - "XXXX:9000"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - ${USERDIR}/docker/portainer/data:/data
       - ${USERDIR}/docker/shared:/shared
     environment:
       - TZ=${TZ}
     networks:
       - traefik_proxy
+      - socket_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=portainer"
-      - "traefik.frontend.rule=Host:portainer.${DOMAINNAME}"  
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /portainer"
-      - "traefik.port=9000"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAINNAME}`)"
+      - "traefik.http.routers.portainer.entrypoints=websecure-internal"
+      - "traefik.http.routers.portainer.tls=true"
+      - "traefik.http.routers.portainer.middlewares=secured@file"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=portainer.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # Organizer - Unified HTPC/Home Server Web Interface
   organizr:
@@ -216,27 +352,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=organizr"
-      - "traefik.frontend.rule=Host:organizr.${DOMAINNAME}"  
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /organizr"
-      - "traefik.port=80"
+      - "traefik.http.routers.organizr.rule=Host(`organizr.${DOMAINNAME}`)"
+      - "traefik.http.routers.organizr.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.organizr.tls=true"
+      - "traefik.http.routers.organizr.middlewares=secured@file"
+      - "traefik.http.services.organizr.loadbalancer.server.port=80"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=organizr.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # phpMyAdmin - WebUI for MariaDB
 # Unzip backup to restore db: pzstd -d mariadb/backups/mysql_boards_mariadb_20221106-185938.sql.zst
@@ -264,26 +385,12 @@ services:
       - default
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=pma"
-      - "traefik.frontend.rule=Host:pma.${DOMAINNAME}"
-      - "traefik.port=80"
+      - "traefik.http.routers.pma.rule=Host(`pma.${DOMAINNAME}`)"
+      - "traefik.http.routers.pma.entrypoints=websecure-internal"
+      - "traefik.http.routers.pma.tls=true"
+      - "traefik.http.routers.pma.middlewares=secured@file"
+      - "traefik.http.services.pma.loadbalancer.server.port=80"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=pma.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 ######### DOCKER RELATED ##########
 
@@ -291,11 +398,10 @@ services:
   watchtower:
     container_name: watchtower
     hostname: watchtower
-    restart: always
+    restart: unless-stopped
     image: containrrr/watchtower
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
     environment:
+      - DOCKER_HOST=tcp://socket-proxy:2375
       - WATCHTOWER_NOTIFICATIONS=slack
       - WATCHTOWER_NOTIFICATION_SLACK_HOOK_URL=${SLACK_WEBHOOK_URL}
       - WATCHTOWER_NOTIFICATION_SLACK_IDENTIFIER=watchtower
@@ -304,7 +410,9 @@ services:
     command: --schedule "0 0 4 * * *" --cleanup --debug
     # command: --schedule "0 0 4 * * *" --cleanup --debug --label-enable
     # add label - com.centurylinklabs.watchtower.enable="false"
-    # verify - docker run -v /var/run/docker.sock:/var/run/docker.sock containrrr/watchtower --run-once --label-enable
+    # verify - docker run -e DOCKER_HOST=tcp://socket-proxy:2375 containrrr/watchtower --run-once --label-enable
+    networks:
+      - socket_proxy
     
 # Docker Garbage Collector
   dockergc: 
@@ -329,39 +437,30 @@ services:
   dozzle:
     container_name: dozzle
     image: amir20/dozzle:latest
-    restart: always
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
-      - DOZZLE_TAILSIZE=100
+      # Use socket-proxy instead of mounting docker.sock directly
+      - DOCKER_HOST=tcp://socket-proxy:2375
       - DOZZLE_LEVEL=info
+      # Delegate auth to Authentik via forward-proxy (secured@file chain handles it)
+      - DOZZLE_AUTH_PROVIDER=forward-proxy
+      - DOZZLE_HOSTNAME=${DOMAINNAME}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /etc/localtime:/etc/localtime:ro
-    #ports:
-    # - 9999:8080
+      # Persists notification settings across restarts
+      - ${USERDIR}/docker/dozzle:/data
     networks:
       - traefik_proxy
+      - socket_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=dozzle"
-      - "traefik.frontend.rule=Host:dozzle.${DOMAINNAME}"
-      - "traefik.port=8080"
+      - "traefik.http.routers.dozzle.rule=Host(`dozzle.${DOMAINNAME}`)"
+      - "traefik.http.routers.dozzle.entrypoints=websecure-internal"
+      - "traefik.http.routers.dozzle.tls=true"
+      - "traefik.http.routers.dozzle.middlewares=secured@file"
+      - "traefik.http.services.dozzle.loadbalancer.server.port=8080"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=dozzle.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"      
       
 # Cloudflare DDNS
   cloudddns:
@@ -379,12 +478,30 @@ services:
   #https://hub.docker.com/r/ldez/traefik-certs-dumper
   certsdump:
     container_name: certsdump
-    image: ldez/traefik-certs-dumper
-    command: file --source /acme.json --dest /dump/live --domain-subdir --crt-name=fullchain --key-name=privkey --crt-ext=.pem --key-ext=.pem
+    image: ldez/traefik-certs-dumper:v2.11.2
+    # Wait until acme.json exists AND contains at least one certificate before
+    # starting the dumper. This guards against the race condition on first boot
+    # where Traefik hasn't obtained its LE cert yet. Once ready, --watch keeps
+    # the process alive and re-dumps on every renewal (~every 60 days).
+    entrypoint: sh -c '
+      while ! [ -e /acme.json ] ||
+        ! [ `jq ".[] | .Certificates | length" /acme.json | jq -s "add"` != 0 ]; do
+        sleep 1;
+      done
+      && traefik-certs-dumper file
+        --version v3
+        --watch
+        --source /acme.json
+        --dest /dump/live
+        --domain-subdir
+        --crt-name=fullchain
+        --key-name=privkey
+        --crt-ext=.pem
+        --key-ext=.pem'
     volumes:
       - ${USERDIR}/docker/traefik/acme/acme.json:/acme.json:ro
       - ${USERDIR}/docker/shared/letsencrypt/etc:/dump
-    restart: "no"
+    restart: unless-stopped
 
 ######### DOWNLOADERS ##########
 
@@ -411,27 +528,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=qbittorrent"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /qbittorrent"
-      - "traefik.frontend.rule=Host:qbit.${DOMAINNAME}"
-      - "traefik.port=8080"
+      - "traefik.http.routers.qbittorrent.rule=Host(`qbit.${DOMAINNAME}`)"
+      - "traefik.http.routers.qbittorrent.entrypoints=websecure-internal"
+      - "traefik.http.routers.qbittorrent.tls=true"
+      - "traefik.http.routers.qbittorrent.middlewares=secured@file"
+      - "traefik.http.services.qbittorrent.loadbalancer.server.port=8080"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=qbit.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
       
 # Flood - modern web UI for various torrent clients
 # use http://qbittorrent:8080 as url in flood settings
@@ -454,27 +556,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=flood"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /flood"
-      - "traefik.frontend.rule=Host:flood.${DOMAINNAME}"
-      - "traefik.port=3002"
+      - "traefik.http.routers.flood.rule=Host(`flood.${DOMAINNAME}`)"
+      - "traefik.http.routers.flood.entrypoints=websecure-internal"
+      - "traefik.http.routers.flood.tls=true"
+      - "traefik.http.routers.flood.middlewares=secured@file"
+      - "traefik.http.services.flood.loadbalancer.server.port=3002"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=flood.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # SABnzbd – Usenet (NZB) Downloader
   sabnzbd:
@@ -496,27 +583,21 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=sabnzbd"
-      - "traefik.frontend.rule=Host:sabnzbd.${DOMAINNAME}"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /sabnzbd"
-      - "traefik.port=8080"
+      ## Bypass router — mobile apps (NZB360) skip Authentik with header key
+      - "traefik.http.routers.sabnzbd-rtr-bypass.rule=Host(`sabnzbd.${DOMAINNAME}`) && Header(`traefik-auth-bypass-key`,`${TRAEFIK_AUTH_BYPASS_KEY}`)"
+      - "traefik.http.routers.sabnzbd-rtr-bypass.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.sabnzbd-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.sabnzbd-rtr-bypass.service=sabnzbd-svc"
+      - "traefik.http.routers.sabnzbd-rtr-bypass.priority=100"
+      ## Auth router — browser access via LAN goes through Authentik
+      - "traefik.http.routers.sabnzbd-rtr.rule=Host(`sabnzbd.${DOMAINNAME}`)"
+      - "traefik.http.routers.sabnzbd-rtr.entrypoints=websecure-internal"
+      - "traefik.http.routers.sabnzbd-rtr.tls=true"
+      - "traefik.http.routers.sabnzbd-rtr.middlewares=secured@file"
+      - "traefik.http.routers.sabnzbd-rtr.service=sabnzbd-svc"
+      - "traefik.http.routers.sabnzbd-rtr.priority=99"
+      - "traefik.http.services.sabnzbd-svc.loadbalancer.server.port=8080"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=sabnzbd.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 ######### PERSONAL VIDEO RECORDERS ##########
 
@@ -541,27 +622,21 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=radarr"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /radarr"
-      - "traefik.frontend.rule=Host:radarr.${DOMAINNAME}"
-      - "traefik.port=7878"
+      ## Bypass router — mobile apps (LunaSea, NZB360) skip Authentik with header key
+      - "traefik.http.routers.radarr-rtr-bypass.rule=Host(`radarr.${DOMAINNAME}`) && Header(`traefik-auth-bypass-key`,`${TRAEFIK_AUTH_BYPASS_KEY}`)"
+      - "traefik.http.routers.radarr-rtr-bypass.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.radarr-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.radarr-rtr-bypass.service=radarr-svc"
+      - "traefik.http.routers.radarr-rtr-bypass.priority=100"
+      ## Auth router — browser access via LAN goes through Authentik
+      - "traefik.http.routers.radarr-rtr.rule=Host(`radarr.${DOMAINNAME}`)"
+      - "traefik.http.routers.radarr-rtr.entrypoints=websecure-internal"
+      - "traefik.http.routers.radarr-rtr.tls=true"
+      - "traefik.http.routers.radarr-rtr.middlewares=secured@file"
+      - "traefik.http.routers.radarr-rtr.service=radarr-svc"
+      - "traefik.http.routers.radarr-rtr.priority=99"
+      - "traefik.http.services.radarr-svc.loadbalancer.server.port=7878"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=radarr.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true" # set to false to show as tabs in organizr
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # Sonarr – TV Show Download and Management
   sonarr:
@@ -584,27 +659,21 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=sonarr"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /sonarr"
-      - "traefik.frontend.rule=Host:sonarr.${DOMAINNAME}"
-      - "traefik.port=8989"
+      ## Bypass router — mobile apps (LunaSea, NZB360) skip Authentik with header key
+      - "traefik.http.routers.sonarr-rtr-bypass.rule=Host(`sonarr.${DOMAINNAME}`) && Header(`traefik-auth-bypass-key`,`${TRAEFIK_AUTH_BYPASS_KEY}`)"
+      - "traefik.http.routers.sonarr-rtr-bypass.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.sonarr-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.sonarr-rtr-bypass.service=sonarr-svc"
+      - "traefik.http.routers.sonarr-rtr-bypass.priority=100"
+      ## Auth router — browser access via LAN goes through Authentik
+      - "traefik.http.routers.sonarr-rtr.rule=Host(`sonarr.${DOMAINNAME}`)"
+      - "traefik.http.routers.sonarr-rtr.entrypoints=websecure-internal"
+      - "traefik.http.routers.sonarr-rtr.tls=true"
+      - "traefik.http.routers.sonarr-rtr.middlewares=secured@file"
+      - "traefik.http.routers.sonarr-rtr.service=sonarr-svc"
+      - "traefik.http.routers.sonarr-rtr.priority=99"
+      - "traefik.http.services.sonarr-svc.loadbalancer.server.port=8989"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=sonarr.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # LIDARR - Music Download and Management
   lidarr:
@@ -628,27 +697,21 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=lidarr"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /lidarr"
-      - "traefik.frontend.rule=Host:lidarr.${DOMAINNAME}"
-      - "traefik.port=8686"
+      ## Bypass router — mobile apps (LunaSea) skip Authentik with header key
+      - "traefik.http.routers.lidarr-rtr-bypass.rule=Host(`lidarr.${DOMAINNAME}`) && Header(`traefik-auth-bypass-key`,`${TRAEFIK_AUTH_BYPASS_KEY}`)"
+      - "traefik.http.routers.lidarr-rtr-bypass.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.lidarr-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.lidarr-rtr-bypass.service=lidarr-svc"
+      - "traefik.http.routers.lidarr-rtr-bypass.priority=100"
+      ## Auth router — browser access via LAN goes through Authentik
+      - "traefik.http.routers.lidarr-rtr.rule=Host(`lidarr.${DOMAINNAME}`)"
+      - "traefik.http.routers.lidarr-rtr.entrypoints=websecure-internal"
+      - "traefik.http.routers.lidarr-rtr.tls=true"
+      - "traefik.http.routers.lidarr-rtr.middlewares=secured@file"
+      - "traefik.http.routers.lidarr-rtr.service=lidarr-svc"
+      - "traefik.http.routers.lidarr-rtr.priority=99"
+      - "traefik.http.services.lidarr-svc.loadbalancer.server.port=8686"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=lidarr.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # Bazarr - Subtitles download and managment
   bazarr:
@@ -671,27 +734,21 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=bazarr"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /bazarr"
-      - "traefik.frontend.rule=Host:bazarr.${DOMAINNAME}"
-      - "traefik.port=6767"
+      ## Bypass router — mobile apps (NZB360) skip Authentik with header key
+      - "traefik.http.routers.bazarr-rtr-bypass.rule=Host(`bazarr.${DOMAINNAME}`) && Header(`traefik-auth-bypass-key`,`${TRAEFIK_AUTH_BYPASS_KEY}`)"
+      - "traefik.http.routers.bazarr-rtr-bypass.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.bazarr-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.bazarr-rtr-bypass.service=bazarr-svc"
+      - "traefik.http.routers.bazarr-rtr-bypass.priority=100"
+      ## Auth router — browser access via LAN goes through Authentik
+      - "traefik.http.routers.bazarr-rtr.rule=Host(`bazarr.${DOMAINNAME}`)"
+      - "traefik.http.routers.bazarr-rtr.entrypoints=websecure-internal"
+      - "traefik.http.routers.bazarr-rtr.tls=true"
+      - "traefik.http.routers.bazarr-rtr.middlewares=secured@file"
+      - "traefik.http.routers.bazarr-rtr.service=bazarr-svc"
+      - "traefik.http.routers.bazarr-rtr.priority=99"
+      - "traefik.http.services.bazarr-svc.loadbalancer.server.port=6767"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=bazarr.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # Proxy server to bypass Cloudflare protection
   flaresolverr:
@@ -746,27 +803,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=lazylibrarian"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /lazylibrarian"
-      - "traefik.frontend.rule=Host:lazylibrarian.${DOMAINNAME}"
-      - "traefik.port=5299"
+      - "traefik.http.routers.lazylibrarian.rule=Host(`lazylibrarian.${DOMAINNAME}`)"
+      - "traefik.http.routers.lazylibrarian.entrypoints=websecure-internal"
+      - "traefik.http.routers.lazylibrarian.tls=true"
+      - "traefik.http.routers.lazylibrarian.middlewares=secured@file"
+      - "traefik.http.services.lazylibrarian.loadbalancer.server.port=5299"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=lazylibrarian.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 ######### MEDIA SERVER APPS ##########
 
@@ -806,27 +848,22 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=plexms"
-      - "traefik.frontend.rule=Host:plex.${DOMAINNAME}"
-      - "traefik.port=32400"
-      - "traefik.protocol=http"
+      ## Bypass router — Plex mobile/TV apps use their own auth after bypassing Authentik
+      - "traefik.http.routers.plexms-rtr-bypass.rule=Host(`plex.${DOMAINNAME}`) && Header(`traefik-auth-bypass-key`,`${TRAEFIK_AUTH_BYPASS_KEY}`)"
+      - "traefik.http.routers.plexms-rtr-bypass.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.plexms-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.plexms-rtr-bypass.service=plexms-svc"
+      - "traefik.http.routers.plexms-rtr-bypass.priority=100"
+      ## Auth router — browser access goes through Authentik
+      - "traefik.http.routers.plexms-rtr.rule=Host(`plex.${DOMAINNAME}`)"
+      - "traefik.http.routers.plexms-rtr.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.plexms-rtr.tls=true"
+      - "traefik.http.routers.plexms-rtr.middlewares=secured@file"
+      - "traefik.http.routers.plexms-rtr.service=plexms-svc"
+      - "traefik.http.routers.plexms-rtr.priority=99"
+      - "traefik.http.services.plexms-svc.loadbalancer.server.port=32400"
+      - "traefik.http.services.plexms-svc.loadbalancer.server.scheme=http"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=plex.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # Jellyfin - Media Server
   jellyfin:
@@ -857,27 +894,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=jellyfin"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /jellyfin"
-      - "traefik.frontend.rule=Host:jellyfin.${DOMAINNAME}"
-      - "traefik.port=8096"
+      - "traefik.http.routers.jellyfin.rule=Host(`jellyfin.${DOMAINNAME}`)"
+      - "traefik.http.routers.jellyfin.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.jellyfin.tls=true"
+      - "traefik.http.routers.jellyfin.middlewares=middlewares-secure-headers@file"
+      - "traefik.http.services.jellyfin.loadbalancer.server.port=8096"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=jellyfin.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      #- "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      #- "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      #- "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # Funkwhale - music streaming server
   funkwhale:
@@ -897,26 +919,12 @@ services:
       - /mnt/storage/media/music:/music
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=funkwhale"
-      - "traefik.frontend.rule=Host:funkwhale.${DOMAINNAME}"
-      - "traefik.port=80"
+      - "traefik.http.routers.funkwhale.rule=Host(`funkwhale.${DOMAINNAME}`)"
+      - "traefik.http.routers.funkwhale.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.funkwhale.tls=true"
+      - "traefik.http.routers.funkwhale.middlewares=secured@file"
+      - "traefik.http.services.funkwhale.loadbalancer.server.port=80"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=funkwhale.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
       
 # MusicBrainz Picard – Music Management
   picard:
@@ -939,26 +947,12 @@ services:
       - DISPLAY_HEIGHT=768
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=picard"
-      - "traefik.frontend.rule=Host:picard.${DOMAINNAME}"
-      - "traefik.port=5800"
+      - "traefik.http.routers.picard.rule=Host(`picard.${DOMAINNAME}`)"
+      - "traefik.http.routers.picard.entrypoints=websecure-internal"
+      - "traefik.http.routers.picard.tls=true"
+      - "traefik.http.routers.picard.middlewares=secured@file"
+      - "traefik.http.services.picard.loadbalancer.server.port=5800"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=picard.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
  
 # Ubooquity - home server for comics and ebooks library
   ubooquity:
@@ -982,29 +976,17 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=ubooquity"
-      - "traefik.frontend.rule=Host:ubooquity.${DOMAINNAME}"
-      - "traefik.port=2202"
-      - "traefik.admin.frontend.rule=Host:ubooquity.${DOMAINNAME}; PathPrefix:/admin,/admin-res,/admin-api"
-      - "traefik.admin.port=2203"
-      - "traefik.protocol=http"
+      - "traefik.http.routers.ubooquity.rule=Host(`ubooquity.${DOMAINNAME}`)"
+      - "traefik.http.routers.ubooquity.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.ubooquity.tls=true"
+      - "traefik.http.routers.ubooquity.middlewares=secured@file"
+      - "traefik.http.services.ubooquity.loadbalancer.server.port=2202"
+      - "traefik.http.routers.ubooquity-admin.rule=Host(`ubooquity.${DOMAINNAME}`) && PathPrefix(`/admin`, `/admin-res`, `/admin-api`)"
+      - "traefik.http.routers.ubooquity-admin.entrypoints=websecure-internal"
+      - "traefik.http.routers.ubooquity-admin.tls=true"
+      - "traefik.http.routers.ubooquity-admin.middlewares=secured@file"
+      - "traefik.http.services.ubooquity-admin.loadbalancer.server.port=2203"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=ubooquity.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
       
 # Calibre-web  – Ebooks and Management
   calibre-web:
@@ -1027,27 +1009,21 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=calibre-web"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /calibre-web"
-      - "traefik.frontend.rule=Host:calibre-web.${DOMAINNAME}"
-      - "traefik.port=8083"
+      ## Bypass router — reading apps skip Authentik with header key
+      - "traefik.http.routers.calibre-web-rtr-bypass.rule=Host(`calibre-web.${DOMAINNAME}`) && Header(`traefik-auth-bypass-key`,`${TRAEFIK_AUTH_BYPASS_KEY}`)"
+      - "traefik.http.routers.calibre-web-rtr-bypass.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.calibre-web-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.calibre-web-rtr-bypass.service=calibre-web-svc"
+      - "traefik.http.routers.calibre-web-rtr-bypass.priority=100"
+      ## Auth router — browser access goes through Authentik
+      - "traefik.http.routers.calibre-web-rtr.rule=Host(`calibre-web.${DOMAINNAME}`)"
+      - "traefik.http.routers.calibre-web-rtr.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.calibre-web-rtr.tls=true"
+      - "traefik.http.routers.calibre-web-rtr.middlewares=secured@file"
+      - "traefik.http.routers.calibre-web-rtr.service=calibre-web-svc"
+      - "traefik.http.routers.calibre-web-rtr.priority=99"
+      - "traefik.http.services.calibre-web-svc.loadbalancer.server.port=8083"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=calibre-web.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
   
   calibre:
     image: "linuxserver/calibre:latest"
@@ -1071,27 +1047,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=calibre"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /calibre"
-      - "traefik.frontend.rule=Host:calibre.${DOMAINNAME}"
-      - "traefik.port=8080"
+      - "traefik.http.routers.calibre.rule=Host(`calibre.${DOMAINNAME}`)"
+      - "traefik.http.routers.calibre.entrypoints=websecure-internal"
+      - "traefik.http.routers.calibre.tls=true"
+      - "traefik.http.routers.calibre.middlewares=secured@file"
+      - "traefik.http.services.calibre.loadbalancer.server.port=8080"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=calibre.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # Kcc - Kindle Comic Converter
   kcc:
@@ -1138,26 +1099,21 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=audiobookshelf"
-      - "traefik.frontend.rule=Host:audiobookshelf.${DOMAINNAME}"
-      - "traefik.port=80"
+      ## Bypass router — mobile app skips Authentik with header key, uses built-in ABS auth
+      - "traefik.http.routers.audiobookshelf-rtr-bypass.rule=Host(`audiobookshelf.${DOMAINNAME}`) && Header(`traefik-auth-bypass-key`,`${TRAEFIK_AUTH_BYPASS_KEY}`)"
+      - "traefik.http.routers.audiobookshelf-rtr-bypass.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.audiobookshelf-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.audiobookshelf-rtr-bypass.service=audiobookshelf-svc"
+      - "traefik.http.routers.audiobookshelf-rtr-bypass.priority=100"
+      ## Auth router — browser access goes through Authentik
+      - "traefik.http.routers.audiobookshelf-rtr.rule=Host(`audiobookshelf.${DOMAINNAME}`)"
+      - "traefik.http.routers.audiobookshelf-rtr.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.audiobookshelf-rtr.tls=true"
+      - "traefik.http.routers.audiobookshelf-rtr.middlewares=secured@file"
+      - "traefik.http.routers.audiobookshelf-rtr.service=audiobookshelf-svc"
+      - "traefik.http.routers.audiobookshelf-rtr.priority=99"
+      - "traefik.http.services.audiobookshelf-svc.loadbalancer.server.port=80"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=audiobookshelf.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 ######### SEARCHERS ##########
 
@@ -1181,27 +1137,48 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=jackett"
-      - "traefik.frontend.rule=Host:jackett.${DOMAINNAME}"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /jackett"
-      - "traefik.port=9117"
+      - "traefik.http.routers.jackett.rule=Host(`jackett.${DOMAINNAME}`)"
+      - "traefik.http.routers.jackett.entrypoints=websecure-internal"
+      - "traefik.http.routers.jackett.tls=true"
+      - "traefik.http.routers.jackett.middlewares=secured@file"
+      - "traefik.http.services.jackett.loadbalancer.server.port=9117"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=jackett.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
+
+# Autobrr – Modern torrent download automation (IRC/RSS → qBittorrent/SABnzbd/etc.)
+# Connect to qBittorrent at http://qbittorrent:8080 and SABnzbd at http://sabnzbd:8080
+  autobrr:
+    image: ghcr.io/autobrr/autobrr:latest
+    container_name: autobrr
+    restart: unless-stopped
+    user: ${PUID}:${PGID}
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - TZ=${TZ}
+      # Required: set listen address to 0.0.0.0 so Traefik can reach the container
+      - AUTOBRR__HOST=0.0.0.0
+      - AUTOBRR__PORT=7474
+      - AUTOBRR__LOG_LEVEL=INFO
+      # Required: random secret for session signing — set in .env
+      - AUTOBRR__SESSION_SECRET=${AUTOBRR_SESSION_SECRET}
+    volumes:
+      - ${USERDIR}/docker/autobrr:/config
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:7474/api/healthz/liveness"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.autobrr.rule=Host(`autobrr.${DOMAINNAME}`)"
+      - "traefik.http.routers.autobrr.entrypoints=websecure-internal"
+      - "traefik.http.routers.autobrr.tls=true"
+      - "traefik.http.routers.autobrr.middlewares=secured@file"
+      - "traefik.http.services.autobrr.loadbalancer.server.port=7474"
+      - "traefik.docker.network=traefik_proxy"
 
 ######### UTILITIES ##########
 
@@ -1230,14 +1207,19 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
-    # Copy-pasted from https://github.com/docker-library/mariadb/issues/94
     healthcheck:
-      test: mariadb-admin ping -h 127.0.0.1 --password=$MYSQL_ROOT_PASSWORD
-      start_period: 20s
-      start_interval: 1s
+      # CMD-SHELL lets the container shell expand $MYSQL_ROOT_PASSWORD at runtime
+      # $$ in compose YAML becomes $ after compose processing — password never hardcoded
+      # NOTE: healthcheck.sh does NOT exist in linuxserver/mariadb (Alpine-based, not official MariaDB image)
+      # --local (unix_socket auth) would only work if root@localhost is granted unix_socket — not guaranteed when MYSQL_ROOT_PASSWORD is set
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD"]
+      start_period: 30s
       interval: 30s
-      timeout: 5s
-      retries: 30
+      timeout: 10s
+      retries: 5
+      # Old healthcheck (password interpolated by compose at parse time, exposed in docker inspect):
+      # test: mariadb-admin ping -h 127.0.0.1 --password=$MYSQL_ROOT_PASSWORD
+      # start_period: 20s / start_interval: 1s / interval: 30s / timeout: 5s / retries: 30
       
 # mysql db backup     
   db-backup:
@@ -1277,17 +1259,17 @@ services:
     restart: always
     entrypoint: redis-server --appendonly yes
     healthcheck:
-      test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
-      interval: 3s
-      timeout: 3s
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      start_period: 20s
+      interval: 30s
       retries: 5
-    #healthcheck:
-      #test: ["CMD-SHELL", "redis-cli ping | grep PONG || exit 1"]
-      #test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 ping | grep 'PONG' || exit 1"]
-      #test: ["CMD-SHELL", "echo 'auth ${REDIS_PASSWORD}\nping' | redis-cli | grep PONG"]
-      #interval: 10s
-      #timeout: 20s
-      #retries: 3
+      timeout: 3s
+    # Previous healthcheck variants (kept for reference):
+    #   test: ["CMD", "redis-cli", "--raw", "incr", "ping"]  # increments a counter each check
+    #   test: ["CMD-SHELL", "redis-cli ping | grep PONG || exit 1"]
+    #   test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 ping | grep 'PONG' || exit 1"]
+    #   test: ["CMD-SHELL", "echo 'auth ${REDIS_PASSWORD}\nping' | redis-cli | grep PONG"]
+    #   interval: 3s / timeout: 3s (too aggressive)
     networks:
       - traefik_proxy
 #    ports:
@@ -1299,10 +1281,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
       #- ${USERDIR}/docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
     labels:
-      - "traefik.enable=true"
-      - "traefik.port=6379"
-      - "traefik.backend=redis"
-      - "traefik.docker.network=traefik_proxy"
+      - "traefik.enable=false"
 
 # Redis Commander - Redis Management Tool
   rediscommander:
@@ -1321,26 +1300,12 @@ services:
       - REDIS_HOST=redis
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=rediscommander"
-      - "traefik.frontend.rule=Host:rediscmd.${DOMAINNAME}"
-      - "traefik.port=8081"
+      - "traefik.http.routers.rediscommander.rule=Host(`rediscmd.${DOMAINNAME}`)"
+      - "traefik.http.routers.rediscommander.entrypoints=websecure-internal"
+      - "traefik.http.routers.rediscommander.tls=true"
+      - "traefik.http.routers.rediscommander.middlewares=secured@file"
+      - "traefik.http.services.rediscommander.loadbalancer.server.port=8081"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=rediscmd.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # CyberChef - the Cyber Swiss Army Knife web app for encryption, encoding, compression and data analysis
   cyberchef:
@@ -1353,26 +1318,12 @@ services:
 #      - "8000:8000"
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=cyberchef"
-      - "traefik.frontend.rule=Host:cyberchef.${DOMAINNAME}"
-      - "traefik.port=8000"
+      - "traefik.http.routers.cyberchef.rule=Host(`cyberchef.${DOMAINNAME}`)"
+      - "traefik.http.routers.cyberchef.entrypoints=websecure-internal"
+      - "traefik.http.routers.cyberchef.tls=true"
+      - "traefik.http.routers.cyberchef.middlewares=secured@file"
+      - "traefik.http.services.cyberchef.loadbalancer.server.port=8000"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=cyberchef.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # NextCloud – Your Own Cloud Storage
   nextcloud:
@@ -1383,6 +1334,10 @@ services:
       - ${USERDIR}/docker/nextcloud:/config
       - ${USERDIR}/shared_data:/data
       - ${USERDIR}/docker/shared:/shared
+      # Use the LE wildcard cert dumped by certsdump — nginx inside Nextcloud picks
+      # these up automatically. /shared is already mounted so no extra host path needed.
+      - ${USERDIR}/docker/shared/letsencrypt/etc/live/${DOMAINNAME}/fullchain.pem:/config/keys/cert.crt:ro
+      - ${USERDIR}/docker/shared/letsencrypt/etc/live/${DOMAINNAME}/privkey.pem:/config/keys/cert.key:ro
 #    ports:
 #      - "XXXX:443"
     environment:
@@ -1392,27 +1347,13 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=nextcloud"
-      - "traefik.frontend.rule=Host:nextcloud.${DOMAINNAME}"
-      - "traefik.port=443"
-      - "traefik.protocol=https"
+      - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAINNAME}`)"
+      - "traefik.http.routers.nextcloud.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.nextcloud.tls=true"
+      - "traefik.http.routers.nextcloud.middlewares=nextcloud-headers@file,nextcloud-redirect@file"
+      - "traefik.http.services.nextcloud.loadbalancer.server.port=443"
+      - "traefik.http.services.nextcloud.loadbalancer.server.scheme=https"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=nextcloud.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      #- "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      #- "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      #- "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # Bitwarden - Password Vault
   bitwarden:
@@ -1444,28 +1385,12 @@ services:
       #- ROCKET_PORT=8888
     labels:
       - "traefik.enable=true"
-      - "traefik.web.frontend.rule=Host:bitwarden.${DOMAINNAME}"
-      - "traefik.web.port=80"
-      #- "traefik.hub.frontend.rule=Host:bitwarden.${DOMAINNAME};Path:/notifications/hub"
-      #- "traefik.hub.port=3012"
-      #- "traefik.hub.protocol=ws"
+      - "traefik.http.routers.bitwarden.rule=Host(`bitwarden.${DOMAINNAME}`)"
+      - "traefik.http.routers.bitwarden.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.bitwarden.tls=true"
+      - "traefik.http.routers.bitwarden.middlewares=middlewares-secure-headers@file"
+      - "traefik.http.services.bitwarden.loadbalancer.server.port=80"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=bitwarden.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      #- "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      #- "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      #- "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # Guacamole – Clientless remote desktop gateway
   guacd:
@@ -1509,34 +1434,19 @@ services:
     restart: always
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=guacamole" #guacamole_docker
-      - "traefik.frontend.rule=Host:guac.${DOMAINNAME}"
-      #- "traefik.frontend.rule=Host:guac.${DOMAINNAME}; AddPrefix: /guacamole"
-      - "traefik.port=8080"
+      - "traefik.http.routers.guacamole.rule=Host(`guac.${DOMAINNAME}`)"
+      - "traefik.http.routers.guacamole.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.guacamole.tls=true"
+      - "traefik.http.routers.guacamole.middlewares=secured@file"
+      - "traefik.http.services.guacamole.loadbalancer.server.port=8080"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=guac.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
       
 # Netdata - real-time performance monitoring
   netdata:
     container_name: netdata
     image: netdata/netdata
     hostname: netdata
-    restart: always
+    restart: unless-stopped
     cap_add:
       - SYS_PTRACE
     security_opt:
@@ -1546,10 +1456,10 @@ services:
       - PGID=${PGID}
       - TZ=${TZ}
       - NETDATA_PORT=19999
+      - DOCKER_HOST=tcp://socket-proxy:2375
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${USERDIR}/docker/netdata:/etc/netdata
       - ${USERDIR}/docker/netdata:/var/lib/netdata
       - ${USERDIR}/docker/netdata:/var/cache/netdata
@@ -1558,69 +1468,42 @@ services:
       - /etc/os-release:/host/etc/os-release:ro
     networks:
       - traefik_proxy
+      - socket_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=netdata"
-      - "traefik.frontend.rule=Host:netdata.${DOMAINNAME}"
-      - "traefik.port=19999"
+      - "traefik.http.routers.netdata.rule=Host(`netdata.${DOMAINNAME}`)"
+      - "traefik.http.routers.netdata.entrypoints=websecure-internal"
+      - "traefik.http.routers.netdata.tls=true"
+      - "traefik.http.routers.netdata.middlewares=secured@file"
+      - "traefik.http.services.netdata.loadbalancer.server.port=19999"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=netdata.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # Glances - web-based top cmd
 # https://glances.readthedocs.io/en/latest/docker.html
   glances:
     container_name: glances
     hostname: glances
-    restart: always
+    restart: unless-stopped
     image: nicolargo/glances:latest-alpine
     #image: vimagick/glances
     #network_mode: host
     pid: host
     networks:
       - traefik_proxy
+      - socket_proxy
     volumes:
       - ${USERDIR}/docker/glances:/etc/glances
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - GLANCES_OPT=-w
+      - DOCKER_HOST=tcp://socket-proxy:2375
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=glances"
-      - "traefik.frontend.rule=Host:glances.${DOMAINNAME}"
-      #- "traefik.frontend.rule=Host:glances.docker.localhost"
-      - "traefik.port=61208"
+      - "traefik.http.routers.glances.rule=Host(`glances.${DOMAINNAME}`)"
+      - "traefik.http.routers.glances.entrypoints=websecure-internal"
+      - "traefik.http.routers.glances.tls=true"
+      - "traefik.http.routers.glances.middlewares=secured@file"
+      - "traefik.http.services.glances.loadbalancer.server.port=61208"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=glances.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # Heimdall - application dashboard
   heimdall:
@@ -1635,26 +1518,12 @@ services:
       - ${USERDIR}/docker/heimdall:/config
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=heim"
-      - "traefik.frontend.rule=Host:${DOMAINNAME}, www.${DOMAINNAME}, heimdall.${DOMAINNAME}"
-      - "traefik.port=80"
+      - "traefik.http.routers.heimdall.rule=Host(`${DOMAINNAME}`, `www.${DOMAINNAME}`, `heimdall.${DOMAINNAME}`)"
+      - "traefik.http.routers.heimdall.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.heimdall.tls=true"
+      - "traefik.http.routers.heimdall.middlewares=secured@file"
+      - "traefik.http.services.heimdall.loadbalancer.server.port=80"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=heimdall.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
     networks:
       - traefik_proxy
 
@@ -1709,26 +1578,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=cloudcmd"
-      - "traefik.frontend.rule=Host:cloudcmd.${DOMAINNAME}"
-      - "traefik.port=8000"
+      - "traefik.http.routers.cloudcmd.rule=Host(`cloudcmd.${DOMAINNAME}`)"
+      - "traefik.http.routers.cloudcmd.entrypoints=websecure-internal"
+      - "traefik.http.routers.cloudcmd.tls=true"
+      - "traefik.http.routers.cloudcmd.middlewares=secured@file"
+      - "traefik.http.services.cloudcmd.loadbalancer.server.port=8000"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=cloudcmd.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # Nginx File Browser - Http File Server
   nginx-file-browser:
@@ -1745,26 +1600,12 @@ services:
 #      - "80:80"
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=nginx-file-browser"
-      - "traefik.frontend.rule=Host:file-server.${DOMAINNAME}"
-      - "traefik.port=80"
+      - "traefik.http.routers.nginx-file-browser.rule=Host(`file-server.${DOMAINNAME}`)"
+      - "traefik.http.routers.nginx-file-browser.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.nginx-file-browser.tls=true"
+      - "traefik.http.routers.nginx-file-browser.middlewares=middlewares-secure-headers@file"
+      - "traefik.http.services.nginx-file-browser.loadbalancer.server.port=80"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=file-server.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      #- "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      #- "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      #- "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # Duplicati - Backups cloud management
   duplicati:
@@ -1789,26 +1630,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=duplicati"
-      - "traefik.frontend.rule=Host:duplicati.${DOMAINNAME}"
-      - "traefik.port=8200"
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAINNAME}`)"
+      - "traefik.http.routers.duplicati.entrypoints=websecure-internal"
+      - "traefik.http.routers.duplicati.tls=true"
+      - "traefik.http.routers.duplicati.middlewares=secured@file"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=duplicati.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # code-server - vscode in a browser
   code-server:
@@ -1832,26 +1659,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=code-server"
-      - "traefik.frontend.rule=Host:code.${DOMAINNAME}"
-      - "traefik.port=8443"
+      - "traefik.http.routers.code-server.rule=Host(`code.${DOMAINNAME}`)"
+      - "traefik.http.routers.code-server.entrypoints=websecure-internal"
+      - "traefik.http.routers.code-server.tls=true"
+      - "traefik.http.routers.code-server.middlewares=secured@file"
+      - "traefik.http.services.code-server.loadbalancer.server.port=8443"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=code.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
       
 # plantuml-server - server for plantuml rendering
 # debugging: docker logs --tail 50 --follow --timestamps plantuml-server
@@ -1875,26 +1688,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=plantuml-server"
-      - "traefik.frontend.rule=Host:plantuml.${DOMAINNAME}"
-      - "traefik.port=8080"
+      - "traefik.http.routers.plantuml-server.rule=Host(`plantuml.${DOMAINNAME}`)"
+      - "traefik.http.routers.plantuml-server.entrypoints=websecure-internal"
+      - "traefik.http.routers.plantuml-server.tls=true"
+      - "traefik.http.routers.plantuml-server.middlewares=secured@file"
+      - "traefik.http.services.plantuml-server.loadbalancer.server.port=8080"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=plantuml.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # fail2ban
   fail2ban:
@@ -1953,27 +1752,12 @@ services:
 #    command: ["gunicorn", "-b", "0.0.0.0:8000"]
 #    labels:
 #      - "traefik.enable=true"
-#      - "traefik.backend=paperless"
-# #      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefix: /paperless"
-#      - "traefik.frontend.rule=Host:paperless.${DOMAINNAME}"
-#      - "traefik.port=8000"
+#      - "traefik.http.routers.paperless.rule=Host(`paperless.${DOMAINNAME}`)"
+#      - "traefik.http.routers.paperless.entrypoints=websecure-internal"
+#      - "traefik.http.routers.paperless.tls=true"
+#      - "traefik.http.routers.paperless.middlewares=secured@file"
+#      - "traefik.http.services.paperless.loadbalancer.server.port=8000"
 #      - "traefik.docker.network=traefik_proxy"
-#      - "traefik.frontend.passHostHeader=true"
-#      - "traefik.frontend.headers.SSLForceHost=true"
-#      - "traefik.frontend.headers.SSLRedirect=true"
-#      - "traefik.frontend.headers.STSSeconds=315360000"
-#      - "traefik.frontend.headers.browserXSSFilter=true"
-#      - "traefik.frontend.headers.contentTypeNosniff=true"
-#      - "traefik.frontend.headers.forceSTSHeader=true"
-#      - "traefik.frontend.headers.SSLHost=paperless.${DOMAINNAME}"
-#      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-#      - "traefik.frontend.headers.STSPreload=true"
-#      - "traefik.frontend.headers.frameDeny=true"
-#      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-#      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-#      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-#      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-#      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 #  paperless_consumer:
 #    image: thepaperlessproject/paperless
@@ -2013,27 +1797,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-#      - "traefik.backend=swagger"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /swagger"
-      - "traefik.frontend.rule=Host:swagger.${DOMAINNAME}"
-      - "traefik.port=8080"
+      - "traefik.http.routers.swagger-editor.rule=Host(`swagger.${DOMAINNAME}`)"
+      - "traefik.http.routers.swagger-editor.entrypoints=websecure-internal"
+      - "traefik.http.routers.swagger-editor.tls=true"
+      - "traefik.http.routers.swagger-editor.middlewares=secured@file"
+      - "traefik.http.services.swagger-editor.loadbalancer.server.port=8080"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=swagger.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # JSON Hero Editor
   jsonhero_editor:
@@ -2050,27 +1819,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-#      - "traefik.backend=jsonhero"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /jsonhero"
-      - "traefik.frontend.rule=Host:jsonh.${DOMAINNAME}"
-      - "traefik.port=8787"
+      - "traefik.http.routers.jsonhero-editor.rule=Host(`jsonh.${DOMAINNAME}`)"
+      - "traefik.http.routers.jsonhero-editor.entrypoints=websecure-internal"
+      - "traefik.http.routers.jsonhero-editor.tls=true"
+      - "traefik.http.routers.jsonhero-editor.middlewares=secured@file"
+      - "traefik.http.services.jsonhero-editor.loadbalancer.server.port=8787"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=jsonh.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # Focalboard - alternative to Trello, Notion, and Asana
   focalboard:
@@ -2092,27 +1846,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=focalboard"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /focalboard"
-      - "traefik.frontend.rule=Host:focalboard.${DOMAINNAME}"
-      - "traefik.port=8000"
+      - "traefik.http.routers.focalboard.rule=Host(`focalboard.${DOMAINNAME}`)"
+      - "traefik.http.routers.focalboard.entrypoints=websecure-internal"
+      - "traefik.http.routers.focalboard.tls=true"
+      - "traefik.http.routers.focalboard.middlewares=secured@file"
+      - "traefik.http.services.focalboard.loadbalancer.server.port=8000"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=focalboard.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
       
 # StandardNotes - personal notes server
 # https://github.com/standardnotes/standalone/blob/main/docker-compose.yml
@@ -2187,27 +1926,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=api-gateway"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /notes"
-      - "traefik.frontend.rule=Host:notes.${DOMAINNAME}"
-      - "traefik.port=3000"
+      - "traefik.http.routers.api-gateway.rule=Host(`notes.${DOMAINNAME}`)"
+      - "traefik.http.routers.api-gateway.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.api-gateway.tls=true"
+      - "traefik.http.routers.api-gateway.middlewares=middlewares-secure-headers@file"
+      - "traefik.http.services.api-gateway.loadbalancer.server.port=3000"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=notes.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      #- "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      #- "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      #- "traefik.frontend.auth.forward.trustForwardHeader=true"
 
   auth:
     image: standardnotes/auth:1.46.2
@@ -2304,27 +2028,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=snext"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /notes-ext"
-      - "traefik.frontend.rule=Host:notes-ext.${DOMAINNAME}"
-      - "traefik.port=80"
+      - "traefik.http.routers.snext.rule=Host(`notes-ext.${DOMAINNAME}`)"
+      - "traefik.http.routers.snext.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.snext.tls=true"
+      - "traefik.http.routers.snext.middlewares=middlewares-secure-headers@file"
+      - "traefik.http.services.snext.loadbalancer.server.port=80"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=notes-ext.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      #- "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      #- "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      #- "traefik.frontend.auth.forward.trustForwardHeader=true"
     
   snweb:
     container_name: snweb
@@ -2364,27 +2073,12 @@ services:
       - traefik_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=snweb"
-#      - "traefik.frontend.rule=Host:${DOMAINNAME}; PathPrefixStrip: /notes-web"
-      - "traefik.frontend.rule=Host:notes-web.${DOMAINNAME}"
-      - "traefik.port=3001"
+      - "traefik.http.routers.snweb.rule=Host(`notes-web.${DOMAINNAME}`)"
+      - "traefik.http.routers.snweb.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.snweb.tls=true"
+      - "traefik.http.routers.snweb.middlewares=middlewares-secure-headers@file"
+      - "traefik.http.services.snweb.loadbalancer.server.port=3001"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=notes-web.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      #- "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      #- "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      #- "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 ######### DNS ##########
   # create network:
@@ -2443,6 +2137,7 @@ services:
     networks:
       skynet:
         ipv4_address: 172.28.0.2
+      traefik_proxy:
     ports:
       - '53:53/tcp'
       - '53:53/udp'
@@ -2451,29 +2146,12 @@ services:
       - '8183:443'
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=pihole"
-      - "traefik.port=80"
-      - "traefik.frontend.rule=Host:pihole.${DOMAINNAME}"
-      #- "traefik.frontend.rule=HostRegexp:pihole.${DOMAINNAME},{catchall:.*}"
-      - "traefik.frontend.priority=1"
+      - "traefik.http.routers.pihole.rule=Host(`pihole.${DOMAINNAME}`)"
+      - "traefik.http.routers.pihole.entrypoints=websecure-internal"
+      - "traefik.http.routers.pihole.tls=true"
+      - "traefik.http.routers.pihole.middlewares=secured@file"
+      - "traefik.http.services.pihole.loadbalancer.server.port=80"
       - "traefik.docker.network=traefik_proxy"
-      # - "traefik.protocol=http"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=pihole.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true"
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
   #resolution_type: GETDNS_RESOLUTION_STUB
   #dns_transport_list:
@@ -2620,23 +2298,12 @@ services:
       # This label is absolutely necessary to help Headplane find Headscale.
       - "me.tale.headplane.target=headscale"
       - "traefik.enable=true"
-      - "traefik.backend=headscale"
-      - "traefik.frontend.rule=Host:headscale.${DOMAINNAME}"
-      - "traefik.port=8080"
+      - "traefik.http.routers.headscale.rule=Host(`headscale.${DOMAINNAME}`)"
+      - "traefik.http.routers.headscale.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.headscale.tls=true"
+      - "traefik.http.routers.headscale.middlewares=middlewares-secure-headers@file"
+      - "traefik.http.services.headscale.loadbalancer.server.port=8080"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=headscale.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true" # set to false to show as tabs in organizr
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
 
 # Headplane – gui for headscale
 # generate a cookie secret - openssl rand -base64 24
@@ -2666,7 +2333,7 @@ services:
       # Ensure that the path matches `headscale.dns_records_path` in your
       # Headplane config.yaml file.
       - ${USERDIR}/docker/headscale/config/extra_records.json:/var/lib/headplane/extra_records.json
-      - /var/run/docker.sock:/var/run/docker.sock:ro # Read-only access to the Docker socket (or a proxy)
+      # docker.sock replaced by socket-proxy — see HEADPLANE_INTEGRATION__DOCKER__SOCKET below
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
@@ -2676,35 +2343,26 @@ services:
       - HEADPLANE_SERVER__COOKIE_SECRET=${HEADPLANE_COOKIE_SECRET}
       - HEADPLANE_HEADSCALE__PUBLIC_URL=https://headscale.${DOMAINNAME}
       - HEADPLANE_INTEGRATION__AGENT_PRE_AUTHKEY=${HEADSCALE_PRE_AUTH_KEY}
+      # Route Docker API calls through socket-proxy (officially supported via tcp://)
+      # Needs only CONTAINERS=1 + POST=1 on socket-proxy (both already enabled)
+      - HEADPLANE_INTEGRATION__DOCKER__SOCKET=tcp://socket-proxy:2375
       - HEADPLANE_OIDC__HEADSCALE_API_KEY=${HEADSCALE_API_KEY}
-      - HEADPLANE_OIDC__ISSUER=https://keycloak.${DOMAINNAME}/auth/realms/master
+      # TODO: Update slug after creating the application in Authentik UI (Applications > Wizard)
+      - HEADPLANE_OIDC__ISSUER=https://authentik.${DOMAINNAME}/application/o/headplane/
       - HEADPLANE_OIDC__CLIENT_ID=${AUTH_CLIENT_ID}
       - HEADPLANE_OIDC__CLIENT_SECRET=${AUTH_CLIENT_SECRET}
       - HEADPLANE_OIDC__REDIRECT_URI=https://headplane.${DOMAINNAME}/admin/oidc/callback
     networks:
       - traefik_proxy
+      - socket_proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.backend=headplane"
-      - "traefik.frontend.rule=Host:headplane.${DOMAINNAME};PathPrefix:/admin/"
-      - "traefik.port=3000"
+      - "traefik.http.routers.headplane.rule=Host(`headplane.${DOMAINNAME}`) && PathPrefix(`/admin/`)"
+      - "traefik.http.routers.headplane.entrypoints=websecure-internal"
+      - "traefik.http.routers.headplane.tls=true"
+      - "traefik.http.routers.headplane.middlewares=secured@file"
+      - "traefik.http.services.headplane.loadbalancer.server.port=3000"
       - "traefik.docker.network=traefik_proxy"
-      - "traefik.frontend.passHostHeader=true"
-      - "traefik.frontend.headers.SSLForceHost=true"
-      - "traefik.frontend.headers.SSLRedirect=true"
-      - "traefik.frontend.headers.STSSeconds=315360000"
-      - "traefik.frontend.headers.browserXSSFilter=true"
-      - "traefik.frontend.headers.contentTypeNosniff=true"
-      - "traefik.frontend.headers.forceSTSHeader=true"
-      - "traefik.frontend.headers.SSLHost=headplane.${DOMAINNAME}"
-      - "traefik.frontend.headers.STSIncludeSubdomains=true"
-      - "traefik.frontend.headers.STSPreload=true"
-      - "traefik.frontend.headers.frameDeny=true" # set to false to show as tabs in organizr
-      - "traefik.frontend.headers.customResponseHeaders=X-Robots-Tag:noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex"
-      - "traefik.frontend.headers.customFrameOptionsValue=allow-from https://${DOMAINNAME}"
-      - "traefik.frontend.auth.forward.address=http://traefik-forward-auth:4181"
-      - "traefik.frontend.auth.forward.authResponseHeaders=X-Forwarded-User"
-      - "traefik.frontend.auth.forward.trustForwardHeader=true"
 
 # Tailscale Client - Operating as Tailnet Exit-Node
   tailscale:
@@ -2733,14 +2391,23 @@ networks:
   traefik_proxy:
     external: true
     name: traefik_proxy
-  keycloak:
-    external: true
-    name: keycloak
+  # keycloak network removed — Authentik uses traefik_proxy + default networks
   skynet:
     external: true
     name: skynet
 #    ipam:
 #      config:
 #        - subnet: 172.28.0.0/16
+  socket_proxy:
+    # Internal-only network — only traefik and socket-proxy can communicate on it
+    name: socket_proxy
+    driver: bridge
+    internal: true
   default:
       driver: bridge
+
+secrets:
+  # Create a scoped Cloudflare DNS API token (Zone → DNS → Edit) and save to this file:
+  # mkdir -p ~/docker/secrets && echo "your_token_here" > ~/docker/secrets/cf_dns_api_token && chmod 600 ~/docker/secrets/cf_dns_api_token
+  cf_dns_api_token:
+    file: ${USERDIR}/docker/secrets/cf_dns_api_token
