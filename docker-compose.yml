@@ -1893,9 +1893,6 @@ services:
     #  - "8135:8080"
     restart: always
     environment:
-      - VIRTUAL_HOST=focalboard.${DOMAINNAME}
-      - VIRTUAL_PORT=8000
-      #- VIRTUAL_PROTO=http
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
@@ -2168,10 +2165,8 @@ services:
       - ServerIP=192.168.31.10
       - DNS1=172.28.0.3
       - DNS2=no
+      - WEBPASSWORD=${PIHOLE_PASSWORD:?err}
       - VIRTUAL_HOST=pihole.${DOMAINNAME}
-      - VIRTUAL_PORT=80
-      - PROXY_LOCATION=pihole
-      - WEBPASSWORD=${KEYCLOAK_PASSWORD}
     volumes:
       - ${USERDIR}/docker/pihole:/etc/pihole
       - ${USERDIR}/docker/pihole/resolv.conf/resolv.conf:/etc/resolv.conf:ro
