@@ -1,5 +1,6 @@
 #Reference: https://www.smarthomebeginner.com/traefik-reverse-proxy-tutorial-for-docker
-#Requirement: nano .env -> Set environmental variables: ${$USERDIR}, ${PUID}, ${PGID}, ${TZ}, ${DOMAINNAME}, ${CLOUDFLARE_EMAIL},  ${CLOUDFLARE_API_KEY}, ${HTTP_USERNAME}, ${HTTP_PASSWORD}, ${PLEX_CLAIM} etc. as explained in the reference.
+#Requirement: nano .env -> Set environment variables such as ${USERDIR}, ${PUID}, ${PGID}, ${TZ}, ${DOMAINNAME}, ${HTTP_USERNAME}, ${HTTP_PASSWORD}, ${PLEX_CLAIM}, etc. as explained in the reference.
+#Cloudflare DNS challenge: Traefik v3 uses CF_DNS_API_TOKEN_FILE together with the `cf_dns_api_token` secret; do not use legacy CLOUDFLARE_EMAIL or CLOUDFLARE_API_KEY values.
 
 # healthchecks TODO: traefik keycloak syncing-server-js auth 
 # TODO: explore cadvisor, DeUnhealth, dockhand, FreshRSS from deployrr
