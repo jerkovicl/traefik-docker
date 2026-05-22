@@ -10,8 +10,9 @@ services:
 
 ######### FRONTENDS ##########
 
-# Docker Socket Proxy - Security-enhanced access to Docker API for Traefik
-# Only exposes the minimal API endpoints Traefik needs (read-only containers/networks/etc)
+# Docker Socket Proxy - Security-enhanced access to Docker API for Traefik + management tools
+# NOTE: This is not read-only/minimal: POST + container lifecycle controls are enabled for Portainer/Headplane.
+# Keep the socket_proxy network restricted to trusted services only.
   socket-proxy:
     image: lscr.io/linuxserver/socket-proxy:latest
     container_name: socket-proxy
@@ -27,7 +28,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - LOG_LEVEL=warning
-      # Portainer control
+      # Management control (Portainer/Headplane)
       - ALLOW_START=1
       - ALLOW_STOP=1
       - ALLOW_RESTARTS=1
@@ -39,7 +40,7 @@ services:
       - AUTH=0
       - SECRETS=0
       - POST=1
-      # Traefik needs
+      # Traefik discovery (read-only)
       - CONTAINERS=1
       - NETWORKS=1
       - SERVICES=1
@@ -235,14 +236,14 @@ services:
       - "traefik.http.routers.authentik-rtr.rule=Host(`authentik.${DOMAINNAME}`)"
       - "traefik.http.routers.authentik-rtr.entrypoints=websecure-internal,websecure-external"
       - "traefik.http.routers.authentik-rtr.tls=true"
-      - "traefik.http.routers.authentik-rtr.tls.certresolver=dns-cloudflare"
+      - "traefik.http.routers.authentik-rtr.tls.certresolver=cloudflare"
       - "traefik.http.routers.authentik-rtr.middlewares=middlewares-secure-headers@file"
       - "traefik.http.routers.authentik-rtr.service=authentik-svc"
       # Catch-all outpost router — intercepts /outpost.goauthentik.io/ on ALL subdomains for forward auth
       - "traefik.http.routers.authentik-output-rtr.rule=HostRegexp(`{subdomain:[a-z0-9-]+}.${DOMAINNAME}`) && PathPrefix(`/outpost.goauthentik.io/`)"
       - "traefik.http.routers.authentik-output-rtr.entrypoints=websecure-internal,websecure-external"
       - "traefik.http.routers.authentik-output-rtr.tls=true"
-      - "traefik.http.routers.authentik-output-rtr.tls.certresolver=dns-cloudflare"
+      - "traefik.http.routers.authentik-output-rtr.tls.certresolver=cloudflare"
       - "traefik.http.routers.authentik-output-rtr.middlewares=middlewares-secure-headers@file"
       - "traefik.http.routers.authentik-output-rtr.service=authentik-svc"
       # Service definition (shared by both routers)
@@ -292,8 +293,10 @@ services:
       - default
     environment:
       POSTGRES_USER: authentik
-      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD:?err}
       POSTGRES_DB: authentik
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgresql_password
+    secrets:
+      - postgresql_password
     volumes:
       - ${USERDIR}/docker/postgresql:/var/lib/postgresql/data
     healthcheck:
@@ -302,6 +305,12 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
 
 # REMOVED: keycloak (jboss/keycloak - deprecated image, replaced by Authentik above)
 # REMOVED: traefik-forward-auth (thomseddon - Authentik has built-in forward auth outpost)
@@ -462,6 +471,35 @@ services:
       - "traefik.http.services.dozzle.loadbalancer.server.port=8080"
       - "traefik.docker.network=traefik_proxy"
       
+# Uptime Kuma - Server status page & uptime monitoring
+  uptime-kuma:
+    container_name: uptime-kuma
+    image: louislam/uptime-kuma:latest
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik_proxy
+      - socket_proxy
+    volumes:
+      - ${USERDIR}/docker/uptime-kuma:/app/data
+    environment:
+      - TZ=${TZ}
+      - DOCKER_HOST=tcp://socket-proxy:2375
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.uptime-kuma.rule=Host(`status.${DOMAINNAME}`)"
+      - "traefik.http.routers.uptime-kuma.entrypoints=websecure-internal,websecure-external"
+      - "traefik.http.routers.uptime-kuma.tls=true"
+      - "traefik.http.services.uptime-kuma.loadbalancer.server.port=3001"
+      - "traefik.docker.network=traefik_proxy"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 # Cloudflare DDNS
   cloudddns:
     container_name: cloudddns
@@ -565,7 +603,7 @@ services:
 
 # SABnzbd – Usenet (NZB) Downloader
   sabnzbd:
-    image: "linuxserver/sabnzbd"
+    image: "lscr.io/linuxserver/sabnzbd"
     container_name: "sabnzbd"
     volumes:
       - ${USERDIR}/docker/sabnzbd:/config
@@ -603,7 +641,7 @@ services:
 
 # Radarr – Movie Download and Management
   radarr:
-    image: "linuxserver/radarr"
+    image: "lscr.io/linuxserver/radarr"
     container_name: "radarr"
     volumes:
       - ${USERDIR}/docker/radarr:/config
@@ -640,7 +678,7 @@ services:
 
 # Sonarr – TV Show Download and Management
   sonarr:
-    image: "linuxserver/sonarr"
+    image: "lscr.io/linuxserver/sonarr"
     container_name: "sonarr"
     volumes:
       - ${USERDIR}/docker/sonarr:/config
@@ -677,7 +715,7 @@ services:
 
 # LIDARR - Music Download and Management
   lidarr:
-    image: "linuxserver/lidarr"
+    image: "lscr.io/linuxserver/lidarr"
     hostname: lidarr
     container_name: "lidarr"
     volumes:
@@ -715,7 +753,7 @@ services:
 
 # Bazarr - Subtitles download and managment
   bazarr:
-    image: linuxserver/bazarr
+    image: lscr.io/linuxserver/bazarr
     container_name: bazarr
     restart: always
     environment:
@@ -783,7 +821,7 @@ services:
       
 # Lazylibrarian  – Ebooks and Management
   lazylibrarian:
-    image: "linuxserver/lazylibrarian"
+    image: "lscr.io/linuxserver/lazylibrarian"
     container_name: "lazylibrarian"
     volumes:
       - ${USERDIR}/docker/lazylibrarian:/config
@@ -867,7 +905,7 @@ services:
 
 # Jellyfin - Media Server
   jellyfin:
-    image: linuxserver/jellyfin
+    image: lscr.io/linuxserver/jellyfin
     container_name: jellyfin
     restart: always
     environment:
@@ -956,7 +994,7 @@ services:
  
 # Ubooquity - home server for comics and ebooks library
   ubooquity:
-    image: linuxserver/ubooquity
+    image: lscr.io/linuxserver/ubooquity
     container_name: ubooquity
     restart: always
     environment:
@@ -990,7 +1028,7 @@ services:
       
 # Calibre-web  – Ebooks and Management
   calibre-web:
-    image: "linuxserver/calibre-web:nightly"
+    image: "lscr.io/linuxserver/calibre-web:nightly"
     container_name: "calibre-web"
     volumes:
       - ${USERDIR}/docker/calibre_web:/config
@@ -1026,7 +1064,7 @@ services:
       - "traefik.docker.network=traefik_proxy"
   
   calibre:
-    image: "linuxserver/calibre:latest"
+    image: "lscr.io/linuxserver/calibre:latest"
     container_name: "calibre"
     volumes:
       - ${USERDIR}/Downloads/completed:/import:rw
@@ -1119,7 +1157,7 @@ services:
 
 # Jackett – Torrent Proxy
   jackett:
-    image: "linuxserver/jackett"
+    image: "lscr.io/linuxserver/jackett"
     container_name: "jackett"
     volumes:
       - ${USERDIR}/docker/jackett:/config
@@ -1184,7 +1222,7 @@ services:
 
 # MariaDB – Database Server for your Apps
   mariadb:
-    image: "linuxserver/mariadb"
+    image: "lscr.io/linuxserver/mariadb"
     container_name: "mariadb"
     hostname: mariadb
     volumes:
@@ -1220,6 +1258,12 @@ services:
       # Old healthcheck (password interpolated by compose at parse time, exposed in docker inspect):
       # test: mariadb-admin ping -h 127.0.0.1 --password=$MYSQL_ROOT_PASSWORD
       # start_period: 20s / start_interval: 1s / interval: 30s / timeout: 5s / retries: 30
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
       
 # mysql db backup     
   db-backup:
@@ -1255,7 +1299,7 @@ services:
 # Redis - Key-value Store
   redis:
     container_name: redis
-    image: redis
+    image: redis:alpine
     restart: always
     entrypoint: redis-server --appendonly yes
     healthcheck:
@@ -1280,6 +1324,12 @@ services:
       - ${USERDIR}/docker/redis/data:/data
       - /etc/localtime:/etc/localtime:ro
       #- ${USERDIR}/docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
     labels:
       - "traefik.enable=false"
 
@@ -1329,7 +1379,7 @@ services:
   nextcloud:
     container_name: nextcloud
     restart: always
-    image: linuxserver/nextcloud
+    image: lscr.io/linuxserver/nextcloud
     volumes:
       - ${USERDIR}/docker/nextcloud:/config
       - ${USERDIR}/shared_data:/data
@@ -1343,6 +1393,13 @@ services:
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
+      - TRUSTED_PROXIES=traefik,127.0.0.1
+      - OVERWRITEPROTOCOL=https
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - traefik_proxy
     labels:
@@ -1507,7 +1564,7 @@ services:
 
 # Heimdall - application dashboard
   heimdall:
-    image: linuxserver/heimdall
+    image: lscr.io/linuxserver/heimdall
     container_name: heimdall
     restart: always
     environment:
@@ -1609,7 +1666,7 @@ services:
 
 # Duplicati - Backups cloud management
   duplicati:
-    image: linuxserver/duplicati
+    image: lscr.io/linuxserver/duplicati
     container_name: duplicati
     volumes:
       - ${USERDIR}/docker/duplicati:/config
@@ -1639,7 +1696,7 @@ services:
 
 # code-server - vscode in a browser
   code-server:
-    image: linuxserver/code-server
+    image: lscr.io/linuxserver/code-server
     container_name: code-server
     restart: always
     environment:
@@ -2411,3 +2468,15 @@ secrets:
   # mkdir -p ~/docker/secrets && echo "your_token_here" > ~/docker/secrets/cf_dns_api_token && chmod 600 ~/docker/secrets/cf_dns_api_token
   cf_dns_api_token:
     file: ${USERDIR}/docker/secrets/cf_dns_api_token
+  # PostgreSQL root password — create with:
+  # echo "strong_random_password" > ${USERDIR}/docker/secrets/postgresql_password && chmod 600 ${USERDIR}/docker/secrets/postgresql_password
+  postgresql_password:
+    file: ${USERDIR}/docker/secrets/postgresql_password
+  # MariaDB root password — create with:
+  # echo "strong_random_password" > ${USERDIR}/docker/secrets/mysql_root_password && chmod 600 ${USERDIR}/docker/secrets/mysql_root_password
+  mysql_root_password:
+    file: ${USERDIR}/docker/secrets/mysql_root_password
+  # Authentik secret key — create with:
+  # openssl rand -hex 32 > ${USERDIR}/docker/secrets/authentik_secret_key && chmod 600 ${USERDIR}/docker/secrets/authentik_secret_key
+  authentik_secret_key:
+    file: ${USERDIR}/docker/secrets/authentik_secret_key

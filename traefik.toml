@@ -118,7 +118,7 @@
 # Dynamic configuration provider (file-based)
 [providers.file]
   watch = true
-  filename = "/etc/traefik/rules.toml"
+  directory = "/rules"
 
 # Docker provider — reads container labels via socket proxy (not direct socket)
 [providers.docker]
@@ -143,4 +143,3 @@
   [[certificatesResolvers.cloudflare.acme.domains]]
     main = "example.com"
     sans = ["*.example.com"]
-
